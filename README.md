@@ -73,7 +73,47 @@ pNSFWMedia/
 
 ## 使い方
 
-### 1. データセットの準備
+### 方法1: 自動分割モード（推奨）
+
+train/valを自動で分割（デフォルト: train 85% / val 15%）
+
+#### 1. データセットの準備
+
+SFW/NSFW 画像を直接配置：
+
+```
+dataset/images/
+├── sfw/
+│   └── *.jpg
+└── nsfw/
+    └── *.jpg
+```
+
+#### 2. 埋め込みの抽出 (Stage A)
+
+```bash
+python src/extract_embeddings.py \
+    --input-dir dataset/images \
+    --output-dir dataset/embeddings \
+    --flat \
+    --batch-size 32
+```
+
+#### 3. 分類器の学習 (Stage B) - 自動分割
+
+```bash
+python src/train_classifier.py \
+    --embeddings-dir dataset/embeddings \
+    --auto-split \
+    --val-ratio 0.15 \
+    --batch-size 64 \
+    --epochs 40 \
+    --use-class-weight
+```
+
+### 方法2: 手動分割モード
+
+#### 1. データセットの準備
 
 SFW/NSFW 画像を用意し、train/val に分割：
 
@@ -82,7 +122,7 @@ python src/prepare_dataset.py organize \
     --sfw-dir /path/to/sfw/images \
     --nsfw-dir /path/to/nsfw/images \
     --output-dir dataset/images \
-    --train-ratio 0.8
+    --train-ratio 0.85
 ```
 
 データセット構造の確認：
@@ -91,7 +131,7 @@ python src/prepare_dataset.py organize \
 python src/prepare_dataset.py verify --dataset-dir dataset/images
 ```
 
-### 2. 埋め込みの抽出 (Stage A)
+#### 2. 埋め込みの抽出 (Stage A)
 
 ```bash
 python src/extract_embeddings.py \
@@ -101,9 +141,7 @@ python src/extract_embeddings.py \
     --batch-size 32
 ```
 
-### 3. 分類器の学習 (Stage B)
-
-#### 基本的な学習
+#### 3. 分類器の学習 (Stage B)
 
 ```bash
 python src/train_classifier.py \
@@ -114,11 +152,12 @@ python src/train_classifier.py \
     --use-class-weight
 ```
 
-#### ハイパーパラメータチューニング付き
+### ハイパーパラメータチューニング
 
 ```bash
 python src/train_classifier.py \
     --embeddings-dir dataset/embeddings \
+    --auto-split \
     --tune \
     --max-trials 30 \
     --epochs 100
@@ -174,6 +213,8 @@ python src/inference.py \
 | num_layers | 1 | 隠れ層の数 (1-2) |
 | activation | tanh | 活性化関数 (tanh/gelu) |
 | dropout | 0.0 | ドロップアウト率 |
+| auto_split | False | 自動でtrain/val分割 |
+| val_ratio | 0.15 | 検証データの割合（15%） |
 
 ## メトリクス
 

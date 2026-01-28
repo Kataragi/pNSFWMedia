@@ -32,16 +32,124 @@ if physical_devices:
 class EmbeddingDataLoader:
     """Load embeddings from .npy files for training."""
 
-    def __init__(self, embeddings_dir: str, embedding_dim: int = 256):
+    def __init__(
+        self,
+        embeddings_dir: str,
+        embedding_dim: int = 256,
+        auto_split: bool = False,
+        val_ratio: float = 0.15,
+        seed: int = 42
+    ):
         """
         Initialize the data loader.
 
         Args:
-            embeddings_dir: Root directory containing train/val/sfw/nsfw subdirs
+            embeddings_dir: Root directory containing embeddings
+                - If auto_split=False: expects train/val/sfw/nsfw subdirs
+                - If auto_split=True: expects sfw/nsfw subdirs directly
             embedding_dim: Expected embedding dimension
+            auto_split: If True, automatically split data into train/val
+            val_ratio: Validation ratio when auto_split=True (default: 0.15 = 15%)
+            seed: Random seed for reproducible splitting
         """
         self.embeddings_dir = Path(embeddings_dir)
         self.embedding_dim = embedding_dim
+        self.auto_split = auto_split
+        self.val_ratio = val_ratio
+        self.seed = seed
+
+        # Cache for auto-split data
+        self._train_data = None
+        self._val_data = None
+
+        if auto_split:
+            self._prepare_auto_split()
+
+    def _prepare_auto_split(self):
+        """
+        Load all embeddings and split into train/val automatically.
+        Train: 85%, Val: 15%
+        """
+        print(f"\nAuto-split mode enabled (val_ratio={self.val_ratio:.0%})")
+
+        all_embeddings = []
+        all_labels = []
+        all_files = []
+
+        for cls, label in [("sfw", 0), ("nsfw", 1)]:
+            # Try direct sfw/nsfw subdirs first
+            cls_dir = self.embeddings_dir / cls
+            if not cls_dir.exists():
+                # Fallback: try without subdirs (flat structure)
+                print(f"Warning: {cls_dir} does not exist")
+                continue
+
+            npy_files = sorted(cls_dir.glob("*.npy"))
+            print(f"Found {len(npy_files)} {cls} embeddings")
+
+            for npy_file in tqdm(npy_files, desc=f"Loading {cls}", leave=False):
+                try:
+                    emb = np.load(npy_file)
+                    if emb.shape == (self.embedding_dim,):
+                        all_embeddings.append(emb)
+                        all_labels.append(label)
+                        all_files.append(str(npy_file))
+                except Exception as e:
+                    print(f"Error loading {npy_file}: {e}")
+
+        if not all_embeddings:
+            raise ValueError(f"No embeddings found in {self.embeddings_dir}")
+
+        all_embeddings = np.array(all_embeddings, dtype=np.float32)
+        all_labels = np.array(all_labels, dtype=np.int32)
+
+        # Stratified split to maintain class balance
+        np.random.seed(self.seed)
+
+        # Get indices for each class
+        sfw_indices = np.where(all_labels == 0)[0]
+        nsfw_indices = np.where(all_labels == 1)[0]
+
+        # Shuffle indices
+        np.random.shuffle(sfw_indices)
+        np.random.shuffle(nsfw_indices)
+
+        # Split each class
+        n_sfw_val = int(len(sfw_indices) * self.val_ratio)
+        n_nsfw_val = int(len(nsfw_indices) * self.val_ratio)
+
+        sfw_val_idx = sfw_indices[:n_sfw_val]
+        sfw_train_idx = sfw_indices[n_sfw_val:]
+        nsfw_val_idx = nsfw_indices[:n_nsfw_val]
+        nsfw_train_idx = nsfw_indices[n_nsfw_val:]
+
+        # Combine indices
+        train_indices = np.concatenate([sfw_train_idx, nsfw_train_idx])
+        val_indices = np.concatenate([sfw_val_idx, nsfw_val_idx])
+
+        # Shuffle combined indices
+        np.random.shuffle(train_indices)
+        np.random.shuffle(val_indices)
+
+        # Store split data
+        self._train_data = (all_embeddings[train_indices], all_labels[train_indices])
+        self._val_data = (all_embeddings[val_indices], all_labels[val_indices])
+
+        # Print summary
+        train_emb, train_lbl = self._train_data
+        val_emb, val_lbl = self._val_data
+
+        print(f"\n{'=' * 50}")
+        print("Auto-split Summary")
+        print(f"{'=' * 50}")
+        print(f"Total: {len(all_embeddings)} embeddings")
+        print(f"Train: {len(train_emb)} ({len(train_emb)/len(all_embeddings)*100:.1f}%)")
+        print(f"  - SFW:  {np.sum(train_lbl == 0)}")
+        print(f"  - NSFW: {np.sum(train_lbl == 1)}")
+        print(f"Val:   {len(val_emb)} ({len(val_emb)/len(all_embeddings)*100:.1f}%)")
+        print(f"  - SFW:  {np.sum(val_lbl == 0)}")
+        print(f"  - NSFW: {np.sum(val_lbl == 1)}")
+        print(f"{'=' * 50}\n")
 
     def load_split(self, split: str) -> tuple:
         """
@@ -53,6 +161,16 @@ class EmbeddingDataLoader:
         Returns:
             Tuple of (embeddings, labels) as numpy arrays
         """
+        if self.auto_split:
+            # Return cached auto-split data
+            if split == "train":
+                return self._train_data
+            elif split == "val":
+                return self._val_data
+            else:
+                raise ValueError(f"Unknown split: {split}")
+
+        # Original behavior: load from train/val subdirectories
         embeddings = []
         labels = []
 
@@ -742,6 +860,23 @@ def main():
         action="store_true",
         help="Use class weighting for imbalanced data"
     )
+    parser.add_argument(
+        "--auto-split",
+        action="store_true",
+        help="Automatically split data into train/val (expects sfw/nsfw subdirs directly)"
+    )
+    parser.add_argument(
+        "--val-ratio",
+        type=float,
+        default=0.15,
+        help="Validation ratio when using --auto-split (default: 0.15 = 15%%)"
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Random seed for data splitting"
+    )
 
     args = parser.parse_args()
 
@@ -750,7 +885,12 @@ def main():
     print("Loading Embeddings")
     print("=" * 60)
 
-    data_loader = EmbeddingDataLoader(args.embeddings_dir)
+    data_loader = EmbeddingDataLoader(
+        args.embeddings_dir,
+        auto_split=args.auto_split,
+        val_ratio=args.val_ratio,
+        seed=args.seed
+    )
 
     train_ds, train_size = data_loader.create_tf_dataset(
         "train",
