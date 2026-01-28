@@ -34,12 +34,36 @@ Twitter/X の pNSFWMedia を参考にした NSFW 画像分類モデルの再現�
 
 ## インストール
 
+### 基本インストール
+
 ```bash
 # 依存パッケージのインストール
 pip install -r requirements.txt
 
 # CLIP のインストール
 pip install git+https://github.com/openai/CLIP.git
+```
+
+### CUDA/GPU サポート（推奨）
+
+GPU を使用して学習を高速化するには、CUDA 対応の TensorFlow と PyTorch をインストールしてください。
+
+```bash
+# CUDA 対応 TensorFlow のインストール
+pip install tensorflow[and-cuda]
+
+# CUDA 対応 PyTorch のインストール（CLIP 用）
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
+```
+
+#### CUDA 環境の確認
+
+```bash
+# TensorFlow の GPU 確認
+python -c "import tensorflow as tf; print(tf.config.list_physical_devices('GPU'))"
+
+# PyTorch の CUDA 確認
+python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
 ```
 
 ## ディレクトリ構造
@@ -78,26 +102,51 @@ dataset/images/
 
 ### 2. 埋め込みの抽出 (Stage A)
 
+CUDA が利用可能な場合は自動的に GPU を使用します。
+
 ```bash
 python src/extract_embeddings.py \
     --input-dir dataset/images \
     --output-dir dataset/embeddings \
-    --flat \
     --batch-size 32
+```
+
+GPU を明示的に指定する場合：
+
+```bash
+python src/extract_embeddings.py \
+    --input-dir dataset/images \
+    --output-dir dataset/embeddings \
+    --device cuda \
+    --batch-size 64
 ```
 
 ### 3. 分類器の学習 (Stage B)
 
-train/val は自動で分割されます（デフォルト: train 85% / val 15%）
+train/val は自動で分割されます（デフォルト: train 85% / val 15%）。
+CUDA が利用可能な場合は自動的に GPU を使用します。
 
 ```bash
 python src/train_classifier.py \
     --embeddings-dir dataset/embeddings \
-    --auto-split \
-    --val-ratio 0.15 \
     --batch-size 64 \
     --epochs 40 \
     --use-class-weight
+```
+
+実行時に以下のようなメッセージが表示されます：
+
+```
+[GPU] CUDA is available. Found 1 GPU(s):
+  [0] /physical_device:GPU:0
+[GPU] Training will use CUDA acceleration
+```
+
+または：
+
+```
+[GPU] CUDA is not available. Using CPU for training.
+[CPU] Training will use CPU
 ```
 
 ### 4. ハイパーパラメータチューニング（オプション）
@@ -105,7 +154,6 @@ python src/train_classifier.py \
 ```bash
 python src/train_classifier.py \
     --embeddings-dir dataset/embeddings \
-    --auto-split \
     --tune \
     --max-trials 30 \
     --epochs 100

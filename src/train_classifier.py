@@ -21,49 +21,62 @@ import tensorflow as tf
 from matplotlib import pyplot as plt
 from tqdm import tqdm
 
-# Configure GPU memory growth
-physical_devices = tf.config.list_physical_devices('GPU')
-if physical_devices:
-    for device in physical_devices:
-        tf.config.experimental.set_memory_growth(device, True)
-    print(f"Found {len(physical_devices)} GPU(s)")
+# Configure GPU/CUDA
+def setup_gpu():
+    """Setup GPU/CUDA for training."""
+    physical_devices = tf.config.list_physical_devices('GPU')
+
+    if physical_devices:
+        try:
+            for device in physical_devices:
+                tf.config.experimental.set_memory_growth(device, True)
+            print(f"[GPU] CUDA is available. Found {len(physical_devices)} GPU(s):")
+            for i, device in enumerate(physical_devices):
+                print(f"  [{i}] {device.name}")
+            return True
+        except RuntimeError as e:
+            print(f"[GPU] Error configuring GPU: {e}")
+            return False
+    else:
+        print("[GPU] CUDA is not available. Using CPU for training.")
+        return False
+
+CUDA_AVAILABLE = setup_gpu()
 
 
 class EmbeddingDataLoader:
-    """Load embeddings from .npy files for training."""
+    """Load embeddings from .npy files for training with automatic train/val split."""
 
     def __init__(
         self,
         embeddings_dir: str,
         embedding_dim: int = 256,
-        auto_split: bool = False,
         val_ratio: float = 0.15,
         seed: int = 42
     ):
         """
         Initialize the data loader.
 
+        Automatically splits data into train/val sets.
+        Expects sfw/nsfw subdirectories directly under embeddings_dir.
+
         Args:
-            embeddings_dir: Root directory containing embeddings
-                - If auto_split=False: expects train/val/sfw/nsfw subdirs
-                - If auto_split=True: expects sfw/nsfw subdirs directly
-            embedding_dim: Expected embedding dimension
-            auto_split: If True, automatically split data into train/val
-            val_ratio: Validation ratio when auto_split=True (default: 0.15 = 15%)
+            embeddings_dir: Root directory containing sfw/ and nsfw/ subdirs
+            embedding_dim: Expected embedding dimension (default: 256)
+            val_ratio: Validation ratio (default: 0.15 = 15%)
             seed: Random seed for reproducible splitting
         """
         self.embeddings_dir = Path(embeddings_dir)
         self.embedding_dim = embedding_dim
-        self.auto_split = auto_split
         self.val_ratio = val_ratio
         self.seed = seed
 
-        # Cache for auto-split data
+        # Cache for split data
         self._train_data = None
         self._val_data = None
 
-        if auto_split:
-            self._prepare_auto_split()
+        # Always use automatic split
+        self._prepare_auto_split()
 
     def _prepare_auto_split(self):
         """
@@ -161,43 +174,12 @@ class EmbeddingDataLoader:
         Returns:
             Tuple of (embeddings, labels) as numpy arrays
         """
-        if self.auto_split:
-            # Return cached auto-split data
-            if split == "train":
-                return self._train_data
-            elif split == "val":
-                return self._val_data
-            else:
-                raise ValueError(f"Unknown split: {split}")
-
-        # Original behavior: load from train/val subdirectories
-        embeddings = []
-        labels = []
-
-        for cls, label in [("sfw", 0), ("nsfw", 1)]:
-            cls_dir = self.embeddings_dir / split / cls
-            if not cls_dir.exists():
-                print(f"Warning: {cls_dir} does not exist")
-                continue
-
-            npy_files = list(cls_dir.glob("*.npy"))
-            print(f"Loading {len(npy_files)} {cls} embeddings from {split}")
-
-            for npy_file in tqdm(npy_files, desc=f"Loading {split}/{cls}", leave=False):
-                try:
-                    emb = np.load(npy_file)
-                    if emb.shape == (self.embedding_dim,):
-                        embeddings.append(emb)
-                        labels.append(label)
-                except Exception as e:
-                    print(f"Error loading {npy_file}: {e}")
-
-        embeddings = np.array(embeddings, dtype=np.float32)
-        labels = np.array(labels, dtype=np.int32)
-
-        print(f"{split}: {len(embeddings)} total, {np.sum(labels)} NSFW, {len(labels) - np.sum(labels)} SFW")
-
-        return embeddings, labels
+        if split == "train":
+            return self._train_data
+        elif split == "val":
+            return self._val_data
+        else:
+            raise ValueError(f"Unknown split: {split}. Must be 'train' or 'val'.")
 
     def create_tf_dataset(
         self,
@@ -775,7 +757,7 @@ def main():
         "--embeddings-dir",
         type=str,
         default="dataset/embeddings",
-        help="Directory containing train/val embeddings"
+        help="Directory containing sfw/ and nsfw/ embedding subdirectories"
     )
     parser.add_argument(
         "--batch-size",
@@ -861,15 +843,10 @@ def main():
         help="Use class weighting for imbalanced data"
     )
     parser.add_argument(
-        "--auto-split",
-        action="store_true",
-        help="Automatically split data into train/val (expects sfw/nsfw subdirs directly)"
-    )
-    parser.add_argument(
         "--val-ratio",
         type=float,
         default=0.15,
-        help="Validation ratio when using --auto-split (default: 0.15 = 15%%)"
+        help="Validation ratio for train/val split (default: 0.15 = 15%%)"
     )
     parser.add_argument(
         "--seed",
@@ -883,11 +860,14 @@ def main():
     # Load data
     print("\n" + "=" * 60)
     print("Loading Embeddings")
+    if CUDA_AVAILABLE:
+        print("[GPU] Training will use CUDA acceleration")
+    else:
+        print("[CPU] Training will use CPU")
     print("=" * 60)
 
     data_loader = EmbeddingDataLoader(
         args.embeddings_dir,
-        auto_split=args.auto_split,
         val_ratio=args.val_ratio,
         seed=args.seed
     )

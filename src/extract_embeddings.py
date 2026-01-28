@@ -192,7 +192,7 @@ def main():
         "--input-dir",
         type=str,
         default="dataset/images",
-        help="Root directory containing train/val/sfw/nsfw subdirectories"
+        help="Root directory containing sfw/ and nsfw/ subdirectories"
     )
     parser.add_argument(
         "--output-dir",
@@ -225,11 +225,6 @@ def main():
         default=None,
         help="Device to use (cuda/cpu, default: auto-detect)"
     )
-    parser.add_argument(
-        "--flat",
-        action="store_true",
-        help="Use flat directory structure (sfw/nsfw directly under input-dir, no train/val split)"
-    )
 
     args = parser.parse_args()
 
@@ -244,53 +239,26 @@ def main():
     input_root = Path(args.input_dir)
     output_root = Path(args.output_dir)
 
-    if args.flat:
-        # Flat structure: input_dir/sfw/, input_dir/nsfw/
-        # Output: output_dir/sfw/, output_dir/nsfw/
-        classes = ["sfw", "nsfw"]
+    # Process sfw and nsfw directories
+    classes = ["sfw", "nsfw"]
 
-        for cls in classes:
-            input_dir = input_root / cls
-            output_dir = output_root / cls
+    for cls in classes:
+        input_dir = input_root / cls
+        output_dir = output_root / cls
 
-            if input_dir.exists():
-                print(f"\nProcessing {cls}...")
-                extract_embeddings_from_directory(
-                    extractor,
-                    str(input_dir),
-                    str(output_dir),
-                    batch_size=args.batch_size
-                )
-            else:
-                print(f"Skipping {input_dir} (not found)")
+        if input_dir.exists():
+            print(f"\nProcessing {cls}...")
+            extract_embeddings_from_directory(
+                extractor,
+                str(input_dir),
+                str(output_dir),
+                batch_size=args.batch_size
+            )
+        else:
+            print(f"Skipping {input_dir} (not found)")
 
-        print("\nEmbedding extraction complete!")
-        print(f"Embeddings saved to: {output_root}")
-        print("\nNote: Use --auto-split with train_classifier.py to automatically split into train/val")
-
-    else:
-        # Original structure: input_dir/train/sfw/, input_dir/val/nsfw/, etc.
-        splits = ["train", "val"]
-        classes = ["sfw", "nsfw"]
-
-        for split in splits:
-            for cls in classes:
-                input_dir = input_root / split / cls
-                output_dir = output_root / split / cls
-
-                if input_dir.exists():
-                    print(f"\nProcessing {split}/{cls}...")
-                    extract_embeddings_from_directory(
-                        extractor,
-                        str(input_dir),
-                        str(output_dir),
-                        batch_size=args.batch_size
-                    )
-                else:
-                    print(f"Skipping {input_dir} (not found)")
-
-        print("\nEmbedding extraction complete!")
-        print(f"Embeddings saved to: {output_root}")
+    print("\nEmbedding extraction complete!")
+    print(f"Embeddings saved to: {output_root}")
 
 
 if __name__ == "__main__":
