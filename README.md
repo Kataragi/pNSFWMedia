@@ -48,36 +48,23 @@ pip install git+https://github.com/openai/CLIP.git
 pNSFWMedia/
 ├── dataset/
 │   ├── images/           # 元画像（Stage A 用）
-│   │   ├── train/
-│   │   │   ├── sfw/
-│   │   │   └── nsfw/
-│   │   └── val/
-│   │       ├── sfw/
-│   │       └── nsfw/
+│   │   ├── sfw/
+│   │   └── nsfw/
 │   └── embeddings/       # 埋め込み（Stage B 用）
-│       ├── train/
-│       │   ├── sfw/
-│       │   └── nsfw/
-│       └── val/
-│           ├── sfw/
-│           └── nsfw/
+│       ├── sfw/
+│       └── nsfw/
 ├── models/               # 学習済みモデル
 ├── logs/                 # TensorBoard ログ
 ├── results/              # 評価結果
 └── src/                  # ソースコード
     ├── extract_embeddings.py   # Stage A: 埋め込み抽出
     ├── train_classifier.py     # Stage B: 分類器学習
-    ├── inference.py            # 推論スクリプト
-    └── prepare_dataset.py      # データセット準備
+    └── inference.py            # 推論スクリプト
 ```
 
 ## 使い方
 
-### 方法1: 自動分割モード（推奨）
-
-train/valを自動で分割（デフォルト: train 85% / val 15%）
-
-#### 1. データセットの準備
+### 1. データセットの準備
 
 SFW/NSFW 画像を直接配置：
 
@@ -89,7 +76,7 @@ dataset/images/
     └── *.jpg
 ```
 
-#### 2. 埋め込みの抽出 (Stage A)
+### 2. 埋め込みの抽出 (Stage A)
 
 ```bash
 python src/extract_embeddings.py \
@@ -99,7 +86,9 @@ python src/extract_embeddings.py \
     --batch-size 32
 ```
 
-#### 3. 分類器の学習 (Stage B) - 自動分割
+### 3. 分類器の学習 (Stage B)
+
+train/val は自動で分割されます（デフォルト: train 85% / val 15%）
 
 ```bash
 python src/train_classifier.py \
@@ -111,48 +100,7 @@ python src/train_classifier.py \
     --use-class-weight
 ```
 
-### 方法2: 手動分割モード
-
-#### 1. データセットの準備
-
-SFW/NSFW 画像を用意し、train/val に分割：
-
-```bash
-python src/prepare_dataset.py organize \
-    --sfw-dir /path/to/sfw/images \
-    --nsfw-dir /path/to/nsfw/images \
-    --output-dir dataset/images \
-    --train-ratio 0.85
-```
-
-データセット構造の確認：
-
-```bash
-python src/prepare_dataset.py verify --dataset-dir dataset/images
-```
-
-#### 2. 埋め込みの抽出 (Stage A)
-
-```bash
-python src/extract_embeddings.py \
-    --input-dir dataset/images \
-    --output-dir dataset/embeddings \
-    --model ViT-B/32 \
-    --batch-size 32
-```
-
-#### 3. 分類器の学習 (Stage B)
-
-```bash
-python src/train_classifier.py \
-    --embeddings-dir dataset/embeddings \
-    --batch-size 64 \
-    --epochs 40 \
-    --learning-rate 1e-3 \
-    --use-class-weight
-```
-
-### ハイパーパラメータチューニング
+### 4. ハイパーパラメータチューニング（オプション）
 
 ```bash
 python src/train_classifier.py \
@@ -163,13 +111,13 @@ python src/train_classifier.py \
     --epochs 100
 ```
 
-### 4. TensorBoard で学習を監視
+### 5. TensorBoard で学習を監視
 
 ```bash
 tensorboard --logdir logs
 ```
 
-### 5. 推論
+### 6. 推論
 
 #### 埋め込みファイルから推論
 
@@ -182,7 +130,7 @@ python src/inference.py \
 # ディレクトリ全体
 python src/inference.py \
     --model-path models/pnsfwmedia_classifier.keras \
-    --embedding-dir dataset/embeddings/val \
+    --embedding-dir dataset/embeddings \
     --output results/predictions.json
 ```
 
@@ -213,7 +161,6 @@ python src/inference.py \
 | num_layers | 1 | 隠れ層の数 (1-2) |
 | activation | tanh | 活性化関数 (tanh/gelu) |
 | dropout | 0.0 | ドロップアウト率 |
-| auto_split | False | 自動でtrain/val分割 |
 | val_ratio | 0.15 | 検証データの割合（15%） |
 
 ## メトリクス
