@@ -202,7 +202,29 @@ class EmbeddingDataLoader:
         """
         embeddings, labels = self.load_split(split)
 
-        dataset = tf.data.Dataset.from_tensor_slices((embeddings, labels))
+        # Debug: Print embedding shape info
+        if len(embeddings) > 0:
+            print(f"[DEBUG] {split} - First embedding shape: {embeddings[0].shape}")
+            print(f"[DEBUG] {split} - Embeddings array shape: {embeddings.shape}")
+
+        # Use generator for more robust handling of embedding shapes
+        def generator():
+            for embedding, label in zip(embeddings, labels):
+                emb = np.array(embedding, dtype=np.float32)
+                if emb.ndim == 0:
+                    raise ValueError(f"Invalid embedding shape: {emb.shape}")
+                elif emb.ndim == 1:
+                    yield emb, label
+                else:
+                    yield emb.flatten(), label
+
+        dataset = tf.data.Dataset.from_generator(
+            generator,
+            output_signature=(
+                tf.TensorSpec(shape=(self.embedding_dim,), dtype=tf.float32),
+                tf.TensorSpec(shape=(), dtype=tf.int32)
+            )
+        )
 
         if shuffle:
             dataset = dataset.shuffle(buffer_size=len(embeddings))
