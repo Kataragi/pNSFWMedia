@@ -299,7 +299,7 @@ def main():
         "--threshold",
         type=float,
         default=0.5,
-        help="Classification threshold"
+        help="Classification threshold (0.0-1.0). Images with NSFW probability >= threshold are classified as NSFW (default: 0.5)"
     )
 
     # Input options
@@ -382,13 +382,17 @@ def main():
     )
 
     # Run inference
+    print(f"\nThreshold: {args.threshold}")
+
     if args.embedding:
         result = classifier.predict_from_npy(args.embedding)
         print(f"\nPrediction for: {args.embedding}")
         print(f"  NSFW Probability: {result['nsfw_probability']:.4f}")
-        print(f"  Classification: {result['classification']}")
+        print(f"  Threshold:        {args.threshold}")
+        print(f"  Classification:   {result['classification']}")
 
         if args.output:
+            result['threshold'] = args.threshold
             with open(args.output, 'w') as f:
                 json.dump(result, f, indent=2)
 
@@ -404,9 +408,11 @@ def main():
         result = classifier.predict_from_image(args.image)
         print(f"\nPrediction for: {args.image}")
         print(f"  NSFW Probability: {result['nsfw_probability']:.4f}")
-        print(f"  Classification: {result['classification']}")
+        print(f"  Threshold:        {args.threshold}")
+        print(f"  Classification:   {result['classification']}")
 
         if args.output:
+            result['threshold'] = args.threshold
             with open(args.output, 'w') as f:
                 json.dump(result, f, indent=2)
 
