@@ -6,10 +6,22 @@ Twitter/X の pNSFWMedia を参考にした NSFW 画像分類モデルの再現�
 
 このプロジェクトは、画像のNSFW（Not Safe For Work）判定を行う2段階構成のモデルを実装しています：
 
-- **Stage A**: CLIP による画像特徴抽出（256次元埋め込み）
+- **Stage A**: 画像特徴抽出（256次元埋め込み）
+  - **NudeNet** (推奨): YOLOv8 backbone + GAP + 直交射影
+  - **CLIP** (レガシー): ViT-B/32 + 線形射影
 - **Stage B**: MLP による二値分類（NSFW確率を出力）
 
 ## アーキテクチャ
+
+### NudeNet ベース（推奨）
+
+```
+[画像] → [NudeNet YOLOv8 Backbone] → [GAP + Orthogonal Projection] → [256-dim 埋め込み]
+                                                                              ↓
+[256-dim 埋め込み] → [BatchNorm + Dense(tanh/gelu)] × 1-2 → [Dense(sigmoid)] → [NSFW確率]
+```
+
+### CLIP ベース（レガシー）
 
 ```
 [画像] → [CLIP ViT-B/32] → [Linear Projection] → [256-dim 埋め込み]
@@ -17,12 +29,21 @@ Twitter/X の pNSFWMedia を参考にした NSFW 画像分類モデルの再現�
 [256-dim 埋め込み] → [BatchNorm + Dense(tanh/gelu)] × 1-2 → [Dense(sigmoid)] → [NSFW確率]
 ```
 
-### Stage A: CLIP 埋め込み
+### Stage A: 埋め込み抽出
+
+#### NudeNet（推奨）
+
+- NudeNet の YOLOv8 ONNX モデルを使用
+- ONNX 中間ノードからバックボーン特徴マップを抽出
+- Global Average Pooling + ランダム直交射影で256次元に変換
+- L2正規化を適用
+- CUDA/CPU 自動検出（onnxruntime）
+
+#### CLIP（レガシー）
 
 - OpenAI CLIP (ViT-B/32) を使用
 - 512次元出力を線形射影で256次元に変換
 - L2正規化を適用
-- 推論時のみ使用（凍結）
 
 ### Stage B: 分類器
 
@@ -39,20 +60,26 @@ Twitter/X の pNSFWMedia を参考にした NSFW 画像分類モデルの再現�
 ```bash
 # 依存パッケージのインストール
 pip install -r requirements.txt
+```
 
-# CLIP のインストール
+CLIP を使用する場合は追加で：
+
+```bash
 pip install git+https://github.com/openai/CLIP.git
 ```
 
 ### CUDA/GPU サポート（推奨）
 
-GPU を使用して学習を高速化するには、CUDA 対応の TensorFlow と PyTorch をインストールしてください。
+GPU を使用して学習・推論を高速化するには、CUDA 対応パッケージをインストールしてください。
 
 ```bash
 # CUDA 対応 TensorFlow のインストール
 pip install tensorflow[and-cuda]
 
-# CUDA 対応 PyTorch のインストール（CLIP 用）
+# CUDA 対応 onnxruntime のインストール（NudeNet 用）
+pip install onnxruntime-gpu
+
+# CUDA 対応 PyTorch のインストール（CLIP 用、必要な場合のみ）
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
 ```
 
@@ -61,6 +88,9 @@ pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
 ```bash
 # TensorFlow の GPU 確認
 python -c "import tensorflow as tf; print(tf.config.list_physical_devices('GPU'))"
+
+# onnxruntime の CUDA 確認
+python -c "import onnxruntime as ort; print(ort.get_available_providers())"
 
 # PyTorch の CUDA 確認
 python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
@@ -81,9 +111,10 @@ pNSFWMedia/
 ├── logs/                 # TensorBoard ログ
 ├── results/              # 評価結果
 └── src/                  # ソースコード
-    ├── extract_embeddings.py   # Stage A: 埋め込み抽出
-    ├── train_classifier.py     # Stage B: 分類器学習
-    └── inference.py            # 推論スクリプト
+    ├── extract_embeddings_nudenet.py  # Stage A: NudeNet 埋め込み抽出（推奨）
+    ├── extract_embeddings.py          # Stage A: CLIP 埋め込み抽出（レガシー）
+    ├── train_classifier.py            # Stage B: 分類器学習
+    └── inference.py                   # 推論スクリプト
 ```
 
 ## 使い方
@@ -102,23 +133,44 @@ dataset/images/
 
 ### 2. 埋め込みの抽出 (Stage A)
 
+#### NudeNet を使用する場合（推奨）
+
+NudeNet の YOLOv8 バックボーンから256次元埋め込みを抽出します。
 CUDA が利用可能な場合は自動的に GPU を使用します。
+
+```bash
+python src/extract_embeddings_nudenet.py \
+    --input-dir dataset/images \
+    --output-dir dataset/embeddings \
+    --batch-size 32
+```
+
+**NudeNet オプション:**
+
+```bash
+# 射影行列のパスを指定
+python src/extract_embeddings_nudenet.py \
+    --input-dir dataset/images \
+    --output-dir dataset/embeddings \
+    --projection-path models/nudenet_projection.npy
+
+# ONNX モデルのノードを確認（デバッグ用）
+python src/extract_embeddings_nudenet.py --list-nodes
+
+# 特徴抽出ノードを手動指定
+python src/extract_embeddings_nudenet.py \
+    --input-dir dataset/images \
+    --output-dir dataset/embeddings \
+    --feature-node "/model.10/cv2/cv2.2/Conv_output_0"
+```
+
+#### CLIP を使用する場合（レガシー）
 
 ```bash
 python src/extract_embeddings.py \
     --input-dir dataset/images \
     --output-dir dataset/embeddings \
     --batch-size 32
-```
-
-GPU を明示的に指定する場合：
-
-```bash
-python src/extract_embeddings.py \
-    --input-dir dataset/images \
-    --output-dir dataset/embeddings \
-    --device cuda \
-    --batch-size 64
 ```
 
 ### 3. 分類器の学習 (Stage B)
@@ -247,12 +299,14 @@ Prediction for: path/to/image.jpg
 ## 出力物
 
 - `models/pnsfwmedia_classifier.keras`: 学習済み分類器
-- `models/clip_projection.pt`: CLIP 射影層の重み
+- `models/nudenet_projection.npy`: NudeNet 射影行列
+- `models/clip_projection.pt`: CLIP 射影層の重み（CLIP 使用時）
 - `logs/pnsfwmedia/`: TensorBoard ログ
 - `results/`: 評価結果とグラフ
 
 ## 参考
 
 - 元実装: `nsfw_media.py` (Twitter/X pNSFWMedia)
+- NudeNet: [notAI-tech/NudeNet](https://github.com/notAI-tech/NudeNet)
 - CLIP: [OpenAI CLIP](https://github.com/openai/CLIP)
 - KerasTuner: [keras-team/keras-tuner](https://github.com/keras-team/keras-tuner)
