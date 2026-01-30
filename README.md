@@ -167,6 +167,9 @@ tensorboard --logdir logs
 
 ### 6. 推論
 
+`--threshold` で分類閾値を指定できます（デフォルト: 0.5）。
+NSFW確率が閾値以上の場合に NSFW と判定されます。
+
 #### 埋め込みファイルから推論
 
 ```bash
@@ -174,6 +177,12 @@ tensorboard --logdir logs
 python src/inference.py \
     --model-path models/pnsfwmedia_classifier.keras \
     --embedding path/to/embedding.npy
+
+# 閾値を変更して推論（厳密な判定）
+python src/inference.py \
+    --model-path models/pnsfwmedia_classifier.keras \
+    --embedding path/to/embedding.npy \
+    --threshold 0.7
 
 # ディレクトリ全体
 python src/inference.py \
@@ -190,11 +199,29 @@ python src/inference.py \
     --model-path models/pnsfwmedia_classifier.keras \
     --image path/to/image.jpg
 
+# 閾値を下げて推論（敏感な判定）
+python src/inference.py \
+    --model-path models/pnsfwmedia_classifier.keras \
+    --image path/to/image.jpg \
+    --threshold 0.3
+
 # ディレクトリ全体
 python src/inference.py \
     --model-path models/pnsfwmedia_classifier.keras \
     --image-dir path/to/images \
-    --output results/predictions.json
+    --output results/predictions.json \
+    --threshold 0.6
+```
+
+#### 出力例
+
+```
+Threshold: 0.5
+
+Prediction for: path/to/image.jpg
+  NSFW Probability: 0.8234
+  Threshold:        0.5
+  Classification:   nsfw
 ```
 
 ## 学習設定
