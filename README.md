@@ -96,7 +96,8 @@ pNSFWMedia/
         ├── models.py                  # Generator / Perceptual / Bridge
         ├── dataset.py                 # NSFW/SFW ペア画像データセット
         ├── losses.py                  # SFM 複合損失関数
-        └── train.py                   # 学習スクリプト
+        ├── train.py                   # 学習スクリプト
+        └── apply.py                   # 摂動適用・推論スクリプト
 ```
 
 ## 使い方
@@ -388,6 +389,121 @@ TensorBoard で確認できるメトリクス：
 
 - **Attack Success Rate (ASR)**: 摂動後に SFW と判定される割合
 - **loss_cls / loss_feat / loss_perc / loss_mag**: 各損失成分の推移
+
+### 摂動の適用（推論）
+
+学習済みモデルを使い、画像に敵対的摂動を適用します。
+出力画像は入力画像の **オリジナル解像度** で保存されます（内部で 224×224 の摂動デルタを生成し、bicubic で原寸にアップスケールして合成）。
+
+加工前・加工後の NSFW 分類確率がコンソールに表示されるため、摂動の効果を即座に確認できます。
+
+#### 単一画像に適用
+
+```bash
+python src/adversarial/apply.py \
+    --checkpoint models/adversarial/sfm_final.pt \
+    --classifier-path models/pnsfwmedia_classifier.keras \
+    --projection-path models/clip_projection.pt \
+    --image path/to/image.jpg \
+    --output-dir output/adversarial
+```
+
+#### ディレクトリ内の画像を一括処理
+
+```bash
+python src/adversarial/apply.py \
+    --checkpoint models/adversarial/sfm_final.pt \
+    --classifier-path models/pnsfwmedia_classifier.keras \
+    --image-dir path/to/images/ \
+    --output-dir output/adversarial
+```
+
+#### 出力ファイル名のカスタマイズ
+
+デフォルトでは `<元ファイル名>_perturbed.<拡張子>` で保存されます。
+`--suffix` で変更できます：
+
+```bash
+python src/adversarial/apply.py \
+    --checkpoint models/adversarial/sfm_final.pt \
+    --classifier-path models/pnsfwmedia_classifier.keras \
+    --image path/to/image.jpg \
+    --suffix _adv
+```
+
+→ 出力: `output/adversarial/image_adv.jpg`
+
+#### 出力例
+
+コンソールには加工前後の NSFW 確率と判定結果が表形式で表示されます：
+
+```
+============================================================
+Image                           Before      After      Result
+------------------------------------------------------------
+  photo001.jpg                  0.9312 NSFW  0.1247 SFW   FLIPPED
+  photo002.jpg                  0.8876 NSFW  0.0983 SFW   FLIPPED
+  photo003.jpg                  0.7654 NSFW  0.4312 SFW   FLIPPED
+  photo004.jpg                  0.5123 NSFW  0.4891 SFW   FLIPPED
+
+============================================================
+Summary
+============================================================
+  Total images processed : 4
+  NSFW -> SFW flipped    : 4 / 4  (100.0%)
+  Avg NSFW prob (before)  : 0.7741
+  Avg NSFW prob (after)   : 0.2608
+  Avg prob reduction      : +0.5133
+  Output directory        : output/adversarial/
+  Report saved to         : output/adversarial/results.json
+```
+
+#### JSON レポート
+
+処理結果は `output/adversarial/results.json` に自動保存されます：
+
+```json
+{
+  "checkpoint": "models/adversarial/sfm_final.pt",
+  "classifier": "models/pnsfwmedia_classifier.keras",
+  "threshold": 0.5,
+  "epsilon": 0.03,
+  "summary": {
+    "total": 4,
+    "flipped": 4,
+    "flip_rate": 1.0,
+    "avg_prob_before": 0.7741,
+    "avg_prob_after": 0.2608
+  },
+  "images": [
+    {
+      "input": "path/to/photo001.jpg",
+      "output": "output/adversarial/photo001_perturbed.jpg",
+      "original_size": [1920, 1080],
+      "prob_before": 0.9312,
+      "prob_after": 0.1247,
+      "label_before": "NSFW",
+      "label_after": "SFW",
+      "flipped": true
+    }
+  ]
+}
+```
+
+#### 推論パラメータ
+
+| パラメータ | デフォルト値 | 説明 |
+|-----------|-------------|------|
+| `--checkpoint` | (必須) | 学習済み SFM チェックポイント (.pt) |
+| `--classifier-path` | `models/pnsfwmedia_classifier.keras` | pNSFWMedia 分類器 |
+| `--projection-path` | `models/clip_projection.pt` | CLIP 射影層の重み |
+| `--clip-model` | ViT-B/32 | CLIP モデル種別 |
+| `--image` | — | 単一画像パス（`--image-dir` と排他） |
+| `--image-dir` | — | 画像ディレクトリ（`--image` と排他） |
+| `--output-dir` | `output/adversarial` | 出力先ディレクトリ |
+| `--suffix` | `_perturbed` | 出力ファイル名に付加するサフィックス |
+| `--threshold` | 0.5 | NSFW 分類閾値 |
+| `--cpu` | — | CPU モードを強制 |
 
 ---
 
