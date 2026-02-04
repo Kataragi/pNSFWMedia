@@ -112,7 +112,7 @@ def setup_device(force_cpu: bool = False) -> torch.device:
     print(f"[Device] CUDA version: {torch.version.cuda}")
     print(f"[Device] cuDNN version: {torch.backends.cudnn.version()}")
     print(f"[Device] GPU memory: "
-          f"{torch.cuda.get_device_properties(0).total_mem / 1e9:.1f} GB")
+          f"{torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
 
     # Enable TF32 for Ampere+ GPUs (faster, negligible precision loss)
     torch.backends.cuda.matmul.allow_tf32 = True
