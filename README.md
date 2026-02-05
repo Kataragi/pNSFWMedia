@@ -62,6 +62,34 @@ python -c "import tensorflow as tf; print(tf.config.list_physical_devices('GPU')
 python -c "import onnxruntime as ort; print(ort.get_available_providers())"
 ```
 
+### 学習済みモデルのダウンロード
+
+仮想環境を有効化した状態で `download_models.bat` を実行すると、HuggingFace から学習済みモデルをダウンロードします。
+
+#### Windows
+
+```cmd
+venv\Scripts\activate
+download_models.bat
+```
+
+#### Linux / macOS
+
+```bash
+source venv/bin/activate
+pip install huggingface_hub
+huggingface-cli download kataragi/adversarial --local-dir models/adversarial --local-dir-use-symlinks False
+```
+
+ダウンロードされるモデル（[HuggingFace リポジトリ](https://huggingface.co/kataragi/adversarial)）：
+
+| ファイル | 説明 |
+|---------|------|
+| `sfm_final.pt` | 敵対的摂動生成モデル（最終エポック） |
+| `sfm_best.pt` | 敵対的摂動生成モデル（最高 ASR） |
+| `pnsfwmedia_classifier.keras` | NSFW 分類器 |
+| `clip_projection.pt` | CLIP 射影層の重み |
+
 ---
 
 ## 敵対的摂動の適用（クイックスタート）
@@ -71,17 +99,19 @@ python -c "import onnxruntime as ort; print(ort.get_available_providers())"
 
 ### 必要なファイル
 
+以下のファイルが必要です（`download_models.bat` で自動ダウンロード可能）：
+
 - `models/adversarial/sfm_final.pt` — 学習済み摂動生成モデル
-- `models/pnsfwmedia_classifier.keras` — NSFW 分類器
-- `models/clip_projection.pt` — CLIP 射影層の重み
+- `models/adversarial/pnsfwmedia_classifier.keras` — NSFW 分類器
+- `models/adversarial/clip_projection.pt` — CLIP 射影層の重み
 
 ### 単一画像に適用
 
 ```bash
 python src/adversarial/apply.py \
     --checkpoint models/adversarial/sfm_final.pt \
-    --classifier-path models/pnsfwmedia_classifier.keras \
-    --projection-path models/clip_projection.pt \
+    --classifier-path models/adversarial/pnsfwmedia_classifier.keras \
+    --projection-path models/adversarial/clip_projection.pt \
     --image path/to/image.jpg \
     --output-dir output/adversarial
 ```
@@ -91,7 +121,8 @@ python src/adversarial/apply.py \
 ```bash
 python src/adversarial/apply.py \
     --checkpoint models/adversarial/sfm_final.pt \
-    --classifier-path models/pnsfwmedia_classifier.keras \
+    --classifier-path models/adversarial/pnsfwmedia_classifier.keras \
+    --projection-path models/adversarial/clip_projection.pt \
     --image-dir path/to/images/ \
     --output-dir output/adversarial
 ```
@@ -173,6 +204,7 @@ Summary
 ```
 pNSFWMedia/
 ├── setup.bat             # Windows セットアップスクリプト
+├── download_models.bat   # 学習済みモデルのダウンロード
 ├── requirements.txt      # 依存パッケージ
 ├── dataset/
 │   ├── images/           # 元画像
