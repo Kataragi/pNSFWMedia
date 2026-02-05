@@ -10,6 +10,197 @@ Twitter/X の pNSFWMedia を参考にした NSFW 画像分類モデルの再現�
 - **Stage B**: MLP による二値分類（NSFW確率を出力）
 - **Adversarial**: Semantic Feature Migration (SFM) による敵対的摂動生成
 
+## インストール
+
+### Windows（推奨）
+
+`setup.bat` を実行すると、仮想環境の作成・依存パッケージのインストール・ディレクトリ構造の作成が自動で行われます。
+
+```cmd
+git clone https://github.com/Kataragi/pNSFWMedia.git
+cd pNSFWMedia
+setup.bat
+```
+
+セットアップ完了後、仮想環境を有効化：
+
+```cmd
+venv\Scripts\activate
+```
+
+### Linux / macOS
+
+```bash
+git clone https://github.com/Kataragi/pNSFWMedia.git
+cd pNSFWMedia
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+pip install git+https://github.com/openai/CLIP.git
+```
+
+### CUDA/GPU サポート（オプション）
+
+GPU を使用して学習・推論を高速化するには、CUDA 対応パッケージを追加インストールしてください。
+
+```bash
+# CUDA 対応 PyTorch（Windows / Linux）
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
+
+# CUDA 対応 TensorFlow
+pip install tensorflow[and-cuda]
+
+# CUDA 対応 onnxruntime（NudeNet 用）
+pip install onnxruntime-gpu
+```
+
+#### CUDA 環境の確認
+
+```bash
+python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
+python -c "import tensorflow as tf; print(tf.config.list_physical_devices('GPU'))"
+python -c "import onnxruntime as ort; print(ort.get_available_providers())"
+```
+
+---
+
+## 敵対的摂動の適用（クイックスタート）
+
+学習済みの敵対的摂動モデルを使い、NSFW 画像に知覚困難なノイズを加えて SFW に誤認させます。
+出力画像は入力画像の **オリジナル解像度** で保存されます。
+
+### 必要なファイル
+
+- `models/adversarial/sfm_final.pt` — 学習済み摂動生成モデル
+- `models/pnsfwmedia_classifier.keras` — NSFW 分類器
+- `models/clip_projection.pt` — CLIP 射影層の重み
+
+### 単一画像に適用
+
+```bash
+python src/adversarial/apply.py \
+    --checkpoint models/adversarial/sfm_final.pt \
+    --classifier-path models/pnsfwmedia_classifier.keras \
+    --projection-path models/clip_projection.pt \
+    --image path/to/image.jpg \
+    --output-dir output/adversarial
+```
+
+### ディレクトリ内の画像を一括処理
+
+```bash
+python src/adversarial/apply.py \
+    --checkpoint models/adversarial/sfm_final.pt \
+    --classifier-path models/pnsfwmedia_classifier.keras \
+    --image-dir path/to/images/ \
+    --output-dir output/adversarial
+```
+
+### 出力例
+
+コンソールには加工前後の NSFW 確率と判定結果が表示されます：
+
+```
+============================================================
+Image                           Before      After      Result
+------------------------------------------------------------
+  photo001.jpg                  0.9312 NSFW  0.1247 SFW   FLIPPED
+  photo002.jpg                  0.8876 NSFW  0.0983 SFW   FLIPPED
+  photo003.jpg                  0.7654 NSFW  0.4312 SFW   FLIPPED
+
+============================================================
+Summary
+============================================================
+  Total images processed : 3
+  NSFW -> SFW flipped    : 3 / 3  (100.0%)
+  Avg NSFW prob (before)  : 0.8614
+  Avg NSFW prob (after)   : 0.2181
+  Output directory        : output/adversarial/
+  Report saved to         : output/adversarial/results.json
+```
+
+### 推論パラメータ
+
+| パラメータ | デフォルト値 | 説明 |
+|-----------|-------------|------|
+| `--checkpoint` | (必須) | 学習済み SFM チェックポイント (.pt) |
+| `--classifier-path` | `models/pnsfwmedia_classifier.keras` | pNSFWMedia 分類器 |
+| `--projection-path` | `models/clip_projection.pt` | CLIP 射影層の重み |
+| `--clip-model` | ViT-B/32 | CLIP モデル種別 |
+| `--image` | — | 単一画像パス（`--image-dir` と排他） |
+| `--image-dir` | — | 画像ディレクトリ（`--image` と排他） |
+| `--output-dir` | `output/adversarial` | 出力先ディレクトリ |
+| `--suffix` | `_perturbed` | 出力ファイル名に付加するサフィックス |
+| `--threshold` | 0.5 | NSFW 分類閾値 |
+| `--cpu` | — | CPU モードを強制 |
+
+### JSON レポート
+
+処理結果は `output/adversarial/results.json` に自動保存されます：
+
+```json
+{
+  "checkpoint": "models/adversarial/sfm_final.pt",
+  "classifier": "models/pnsfwmedia_classifier.keras",
+  "threshold": 0.5,
+  "epsilon": 0.03,
+  "summary": {
+    "total": 3,
+    "flipped": 3,
+    "flip_rate": 1.0,
+    "avg_prob_before": 0.8614,
+    "avg_prob_after": 0.2181
+  },
+  "images": [
+    {
+      "input": "path/to/photo001.jpg",
+      "output": "output/adversarial/photo001_perturbed.jpg",
+      "original_size": [1920, 1080],
+      "prob_before": 0.9312,
+      "prob_after": 0.1247,
+      "label_before": "NSFW",
+      "label_after": "SFW",
+      "flipped": true
+    }
+  ]
+}
+```
+
+---
+
+## ディレクトリ構造
+
+```
+pNSFWMedia/
+├── setup.bat             # Windows セットアップスクリプト
+├── requirements.txt      # 依存パッケージ
+├── dataset/
+│   ├── images/           # 元画像
+│   │   ├── sfw/
+│   │   └── nsfw/
+│   └── embeddings/       # 埋め込み（Stage B 用）
+│       ├── sfw/
+│       └── nsfw/
+├── models/               # 学習済みモデル
+│   └── adversarial/      # SFM 敵対的摂動モデル
+├── logs/                 # TensorBoard ログ
+├── results/              # 評価結果
+└── src/
+    ├── extract_embeddings_nudenet.py  # Stage A: NudeNet 埋め込み抽出
+    ├── extract_embeddings.py          # Stage A: CLIP 埋め込み抽出
+    ├── train_classifier.py            # Stage B: 分類器学習
+    ├── inference.py                   # 推論スクリプト
+    └── adversarial/                   # 敵対的摂動
+        ├── __init__.py
+        ├── models.py                  # Generator / Perceptual / Bridge
+        ├── dataset.py                 # NSFW/SFW ペア画像データセット
+        ├── losses.py                  # SFM 複合損失関数
+        ├── train.py                   # 学習スクリプト
+        └── apply.py                   # 摂動適用・推論スクリプト
+```
+
+---
+
 ## アーキテクチャ
 
 ### 分類パイプライン
@@ -36,74 +227,31 @@ Twitter/X の pNSFWMedia を参考にした NSFW 画像分類モデルの再現�
 - 出力層: Dense(1, sigmoid)
 - 損失関数: BinaryCrossentropy
 
-## インストール
-
-### 基本インストール
-
-```bash
-pip install -r requirements.txt
-```
-
-### 敵対的摂動学習の追加依存
-
-SFM 敵対的摂動の学習には CLIP と PyTorch が必要です：
-
-```bash
-pip install git+https://github.com/openai/CLIP.git
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
-```
-
-### CUDA/GPU サポート（推奨）
-
-```bash
-# CUDA 対応 TensorFlow
-pip install tensorflow[and-cuda]
-
-# CUDA 対応 onnxruntime（NudeNet 用）
-pip install onnxruntime-gpu
-```
-
-#### CUDA 環境の確認
-
-```bash
-python -c "import tensorflow as tf; print(tf.config.list_physical_devices('GPU'))"
-python -c "import onnxruntime as ort; print(ort.get_available_providers())"
-python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
-```
-
-## ディレクトリ構造
+### SFM 敵対的摂動アーキテクチャ
 
 ```
-pNSFWMedia/
-├── dataset/
-│   ├── images/           # 元画像
-│   │   ├── sfw/
-│   │   └── nsfw/
-│   └── embeddings/       # 埋め込み（Stage B 用）
-│       ├── sfw/
-│       └── nsfw/
-├── models/               # 学習済みモデル
-│   └── adversarial/      # SFM 敵対的摂動モデル
-├── logs/                 # TensorBoard ログ
-├── results/              # 評価結果
-└── src/
-    ├── extract_embeddings_nudenet.py  # Stage A: NudeNet 埋め込み抽出
-    ├── extract_embeddings.py          # Stage A: CLIP 埋め込み抽出
-    ├── train_classifier.py            # Stage B: 分類器学習
-    ├── inference.py                   # 推論スクリプト
-    └── adversarial/                   # 敵対的摂動学習
-        ├── __init__.py
-        ├── models.py                  # Generator / Perceptual / Bridge
-        ├── dataset.py                 # NSFW/SFW ペア画像データセット
-        ├── losses.py                  # SFM 複合損失関数
-        └── train.py                   # 学習スクリプト
+[NSFW画像] ─┬──────────────────────────────── [元画像]
+            │                                     │
+            ↓                                     ↓ (視覚比較)
+    [CLIP Encoder (frozen)]                [PerceptualSimilarityNet]
+            ↓                                     ↑
+    [NSFW 埋め込み]                          [摂動後画像]
+            │                                     ↑
+            ↓                              [元画像 + δ (clamp)]
+  [FeatureDifferenceConditioner]                  ↑
+    (SFW centroid - NSFW embed)         [PerturbationGenerator]
+            │                              ↑          ↑
+            ↓                           [NSFW画像] [cond vector]
+       [cond vector] ──────────────────────────────┘
 ```
 
-## 使い方
+---
+
+## 分類器の学習
 
 ### 1. データセットの準備
 
-SFW/NSFW 画像を直接配置：
+SFW/NSFW 画像を配置：
 
 ```
 dataset/images/
@@ -115,9 +263,6 @@ dataset/images/
 
 ### 2. 埋め込みの抽出 (Stage A)
 
-NudeNet の YOLOv8 バックボーンから256次元埋め込みを抽出します。
-CUDA が利用可能な場合は自動的に GPU を使用します。
-
 ```bash
 python src/extract_embeddings_nudenet.py \
     --input-dir dataset/images \
@@ -125,28 +270,7 @@ python src/extract_embeddings_nudenet.py \
     --batch-size 32
 ```
 
-**オプション:**
-
-```bash
-# 射影行列のパスを指定
-python src/extract_embeddings_nudenet.py \
-    --input-dir dataset/images \
-    --output-dir dataset/embeddings \
-    --projection-path models/nudenet_projection.npy
-
-# ONNX モデルのノードを確認（デバッグ用）
-python src/extract_embeddings_nudenet.py --list-nodes
-
-# 特徴抽出ノードを手動指定
-python src/extract_embeddings_nudenet.py \
-    --input-dir dataset/images \
-    --output-dir dataset/embeddings \
-    --feature-node "/model.10/cv2/cv2.2/Conv_output_0"
-```
-
 ### 3. 分類器の学習 (Stage B)
-
-train/val は自動で分割されます（デフォルト: train 85% / val 15%）。
 
 ```bash
 python src/train_classifier.py \
@@ -166,80 +290,35 @@ python src/train_classifier.py \
     --epochs 100
 ```
 
-### 5. TensorBoard で学習を監視
+### 5. 推論
 
 ```bash
-tensorboard --logdir logs
-```
-
-### 6. 推論
-
-`--threshold` で分類閾値を指定できます（デフォルト: 0.5）。
-
-```bash
-# 画像から直接推論
 python src/inference.py \
     --model-path models/pnsfwmedia_classifier.keras \
     --image path/to/image.jpg
-
-# 閾値を変更（敏感な判定）
-python src/inference.py \
-    --model-path models/pnsfwmedia_classifier.keras \
-    --image path/to/image.jpg \
-    --threshold 0.3
-
-# ディレクトリ全体
-python src/inference.py \
-    --model-path models/pnsfwmedia_classifier.keras \
-    --image-dir path/to/images \
-    --output results/predictions.json
 ```
 
-#### 出力例
+### 分類器 学習パラメータ
 
-```
-Threshold: 0.5
-
-Prediction for: path/to/image.jpg
-  NSFW Probability: 0.8234
-  Threshold:        0.5
-  Classification:   nsfw
-```
+| パラメータ | デフォルト値 | 説明 |
+|-----------|-------------|------|
+| batch_size | 64 | バッチサイズ |
+| epochs | 40 | 最大エポック数 |
+| learning_rate | 1e-3 | 学習率 |
+| patience | 5 | Early stopping の patience |
+| units | 256 | 隠れ層のユニット数 |
+| num_layers | 1 | 隠れ層の数 (1-2) |
+| activation | tanh | 活性化関数 (tanh/gelu) |
+| dropout | 0.0 | ドロップアウト率 |
+| val_ratio | 0.15 | 検証データの割合（15%） |
 
 ---
 
-## 敵対的摂動学習 (Semantic Feature Migration)
-
-### 概要
+## 敵対的摂動モデルの学習
 
 NSFW 画像に対して人間には知覚困難な微小ノイズ（摂動）を加え、pNSFWMedia 分類器に SFW と誤認させる **摂動生成ネットワーク** を学習します。
 
 本手法は FGSM・PGD・Carlini & Wagner・DeepFool のいずれとも異なり、フィードフォワード型の生成モデルが一回のフォワードパスで摂動を出力する独自設計です。
-
-### SFM アーキテクチャ
-
-```
-[NSFW画像] ─┬──────────────────────────────── [元画像]
-            │                                     │
-            ↓                                     ↓ (視覚比較)
-    [CLIP Encoder (frozen)]                [PerceptualSimilarityNet]
-            ↓                                     ↑
-    [NSFW 埋め込み]                          [摂動後画像]
-            │                                     ↑
-            ↓                              [元画像 + δ (clamp)]
-  [FeatureDifferenceConditioner]                  ↑
-    (SFW centroid - NSFW embed)         [PerturbationGenerator]
-            │                              ↑          ↑
-            ↓                           [NSFW画像] [cond vector]
-       [cond vector] ──────────────────────────────┘
-```
-
-学習される全体の流れ：
-
-1. NSFW / SFW 画像ペアを CLIP で埋め込み → セントロイドを EMA で追跡
-2. `sfw_centroid - nsfw_embed` の差分ベクトルを Generator に FiLM 注入
-3. Generator が元画像に対する摂動 δ を出力（`tanh × ε` で有界）
-4. 摂動後画像を再び CLIP + 分類器に通し、4成分損失で Generator を更新
 
 ### 損失関数
 
@@ -257,27 +336,6 @@ L_total = λ_cls  × L_classification       # BCE(pred, 0.05): SFW 確信への�
 | L_perceptual | 人間の視覚に近い多層 VGG 特徴比較で視覚的忠実性を保持 | λ=1.0 |
 | L_magnitude | 摂動の絶対量を抑制し知覚不可能に維持 | λ=10.0 |
 
-### データセットの準備
-
-敵対的摂動学習には **NSFW 画像と SFW 画像の両方** が必要です。分類器学習（Stage B）用の埋め込みではなく、**元画像ファイル** を使います。
-
-```
-dataset/images/
-├── sfw/          # SFW 画像（特徴分布の学習に使用）
-│   ├── img001.jpg
-│   ├── img002.png
-│   └── ...
-└── nsfw/         # NSFW 画像（摂動対象）
-    ├── img001.jpg
-    ├── img002.png
-    └── ...
-```
-
-- **対応フォーマット**: `.jpg`, `.jpeg`, `.png`, `.webp`, `.bmp`
-- **推奨画像数**: NSFW / SFW 各 500 枚以上（多いほど特徴分布の学習精度が向上）
-- **画像サイズ**: 任意（学習時に自動で 224×224 にリサイズ）
-- SFW 画像は摂動対象ではなく、**NSFW/SFW 間の特徴差分を学習する参照** として使用されます
-
 ### 前提条件
 
 学習開始前に以下が必要です：
@@ -286,19 +344,9 @@ dataset/images/
 2. **CLIP 射影層** `models/clip_projection.pt`（`src/extract_embeddings.py` で生成）
 3. **NSFW/SFW 画像** が `dataset/images/` に配置済み
 
-分類器と射影層がまだ無い場合は、先に Stage A → B を完了してください：
+分類器と射影層がまだ無い場合は、先に Stage A → B を完了し、CLIP 射影層を生成してください：
 
 ```bash
-# Stage A: 埋め込み抽出
-python src/extract_embeddings_nudenet.py \
-    --input-dir dataset/images \
-    --output-dir dataset/embeddings
-
-# Stage B: 分類器学習
-python src/train_classifier.py \
-    --embeddings-dir dataset/embeddings \
-    --epochs 40
-
 # CLIP 射影層の生成（SFM 学習に必要）
 python src/extract_embeddings.py \
     --input-dir dataset/images \
@@ -312,7 +360,7 @@ python src/adversarial/train.py \
     --image-dir dataset/images \
     --classifier-path models/pnsfwmedia_classifier.keras \
     --projection-path models/clip_projection.pt \
-    --epochs 50 \
+    --epochs 30 \
     --batch-size 8 \
     --lr 2e-4 \
     --epsilon 0.03
@@ -333,40 +381,35 @@ python src/adversarial/train.py \
 | `--sfw-target` | 0.05 | 目標 NSFW 確率（低いほど強い誘導） |
 | `--image-size` | 224 | 学習時の画像リサイズ先 |
 | `--clip-model` | ViT-B/32 | CLIP モデル種別 |
+| `--output-dir` | models/adversarial | モデル出力先 |
 
-### CUDA 互換性問題のデバッグ
+### ノイズ量の調整
 
-PyTorch / ONNX / onnx2torch 変換や CUDA 実行時にエラーが発生した場合、以下の環境変数を指定して同期実行モードで原因を特定します：
+視覚的に見えないレベルまでノイズを抑えたい場合：
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 CUDA_LAUNCH_BLOCKING=1 \
 python src/adversarial/train.py \
     --image-dir dataset/images \
     --classifier-path models/pnsfwmedia_classifier.keras \
-    --epochs 50
+    --epsilon 0.012 \
+    --lambda-cls 3.0 \
+    --lambda-feat 4.0 \
+    --lambda-perc 5.0 \
+    --lambda-mag 50.0 \
+    --sfw-target 0.10 \
+    --epochs 30
 ```
 
-- `CUDA_VISIBLE_DEVICES=0`: 使用する GPU を明示的に指定
-- `CUDA_LAUNCH_BLOCKING=1`: CUDA カーネルを同期実行し、エラー発生行を正確に特定
-
-CPU のみで学習する場合：
-
-```bash
-python src/adversarial/train.py --cpu \
-    --image-dir dataset/images \
-    --classifier-path models/pnsfwmedia_classifier.keras
-```
-
-### チェックポイントと再開
+### チェックポイント
 
 学習中のチェックポイントは `models/adversarial/` に保存されます：
 
 ```
 models/adversarial/
 ├── sfm_best.pt              # 最高 ASR のチェックポイント
-├── sfm_epoch004.pt           # 5エポックごとの定期保存
-├── sfm_final.pt              # 最終エポック
-└── train_config.json         # 学習設定の記録
+├── sfm_epoch004.pt          # 5エポックごとの定期保存
+├── sfm_final.pt             # 最終エポック
+└── train_config.json        # 学習設定の記録
 ```
 
 中断した学習を再開するには：
@@ -384,37 +427,37 @@ python src/adversarial/train.py \
 tensorboard --logdir logs/adversarial
 ```
 
-TensorBoard で確認できるメトリクス：
+### CUDA 互換性問題のデバッグ
 
-- **Attack Success Rate (ASR)**: 摂動後に SFW と判定される割合
-- **loss_cls / loss_feat / loss_perc / loss_mag**: 各損失成分の推移
+```bash
+CUDA_VISIBLE_DEVICES=0 CUDA_LAUNCH_BLOCKING=1 \
+python src/adversarial/train.py \
+    --image-dir dataset/images \
+    --classifier-path models/pnsfwmedia_classifier.keras
+```
+
+CPU のみで学習する場合：
+
+```bash
+python src/adversarial/train.py --cpu \
+    --image-dir dataset/images \
+    --classifier-path models/pnsfwmedia_classifier.keras
+```
 
 ---
-
-## 分類器 学習設定
-
-| パラメータ | デフォルト値 | 説明 |
-|-----------|-------------|------|
-| batch_size | 64 | バッチサイズ |
-| epochs | 40 | 最大エポック数 |
-| learning_rate | 1e-3 | 学習率 |
-| patience | 5 | Early stopping の patience |
-| units | 256 | 隠れ層のユニット数 |
-| num_layers | 1 | 隠れ層の数 (1-2) |
-| activation | tanh | 活性化関数 (tanh/gelu) |
-| dropout | 0.0 | ドロップアウト率 |
-| val_ratio | 0.15 | 検証データの割合（15%） |
 
 ## メトリクス
 
 - **PR-AUC**: Precision-Recall 曲線下面積
 - **ROC-AUC**: ROC 曲線下面積
 - **Precision@Recall=0.9**: Recall=0.9 での Precision
+- **ASR (Attack Success Rate)**: 敵対的摂動で SFW に誤分類された割合
 
 ## 出力物
 
 - `models/pnsfwmedia_classifier.keras`: 学習済み分類器
 - `models/nudenet_projection.npy`: NudeNet 射影行列
+- `models/clip_projection.pt`: CLIP 射影層の重み
 - `models/adversarial/sfm_best.pt`: 最良の敵対的摂動生成モデル
 - `logs/`: TensorBoard ログ
 - `results/`: 評価結果とグラフ
