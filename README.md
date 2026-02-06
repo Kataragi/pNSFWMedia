@@ -118,9 +118,46 @@ image/
 
 ### 単一画像に適用
 
+ノイズレベルに応じて使用するモデルを選択してください：
+
+#### high_noise.pt（高ノイズ・高攻撃成功率）
+
 ```bash
 python src/adversarial/apply.py \
     --checkpoint models/adversarial/high_noise.pt \
+    --classifier-path models/pnsfwmedia_classifier.keras \
+    --projection-path models/clip_projection.pt \
+    --image image/image.png \
+    --output-dir output/adversarial
+```
+
+#### medium_noise.pt（中ノイズ）
+
+```bash
+python src/adversarial/apply.py \
+    --checkpoint models/adversarial/medium_noise.pt \
+    --classifier-path models/pnsfwmedia_classifier.keras \
+    --projection-path models/clip_projection.pt \
+    --image image/image.png \
+    --output-dir output/adversarial
+```
+
+#### low_noise.pt（低ノイズ）
+
+```bash
+python src/adversarial/apply.py \
+    --checkpoint models/adversarial/low_noise.pt \
+    --classifier-path models/pnsfwmedia_classifier.keras \
+    --projection-path models/clip_projection.pt \
+    --image image/image.png \
+    --output-dir output/adversarial
+```
+
+#### very_lownoise.pt（極低ノイズ・視覚的に不可視）
+
+```bash
+python src/adversarial/apply.py \
+    --checkpoint models/adversarial/very_lownoise.pt \
     --classifier-path models/pnsfwmedia_classifier.keras \
     --projection-path models/clip_projection.pt \
     --image image/image.png \
