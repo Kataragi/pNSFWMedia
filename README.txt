@@ -82,7 +82,11 @@ HuggingFace から学習済みモデルをダウンロードします。
 GUI で敵対的摂動を適用
 --------------------------------------------------------------------------------
 
-Gradio による Web ベースの GUI を起動します。
+GUI.bat をダブルクリックするか、以下のコマンドで Gradio GUI を起動します。
+
+    GUI.bat
+
+または直接実行：
 
     python src/adversarial/gui.py
 
@@ -354,6 +358,7 @@ Gradio による Web ベースの GUI を起動します。
     pNSFWMedia/
     ├── setup.bat             # Windows セットアップスクリプト
     ├── download_models.bat   # 学習済みモデルのダウンロード
+    ├── GUI.bat               # Gradio GUI 起動スクリプト
     ├── requirements.txt      # 依存パッケージ
     ├── image/                # 摂動を加える入力画像を配置
     ├── dataset/
