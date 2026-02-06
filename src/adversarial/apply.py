@@ -3,36 +3,28 @@
 SFM Adversarial Perturbation — Inference (Apply) Script
 
 Applies a trained PerturbationGenerator to input images and outputs
-perturbed images at their original resolution. Also displays the
-pNSFWMedia classifier's judgment before and after perturbation.
+perturbed images at their original resolution.
 
 Usage
 -----
     # Single image
     python src/adversarial/apply.py \
-        --checkpoint models/adversarial/sfm_final.pt \
+        --checkpoint models/adversarial/high_noise.pt \
         --classifier-path models/pnsfwmedia_classifier.keras \
         --projection-path models/clip_projection.pt \
-        --image path/to/nsfw_image.jpg \
-        --output-dir output/
+        --image image/image.png \
+        --output-dir output/adversarial
 
     # Directory of images
     python src/adversarial/apply.py \
-        --checkpoint models/adversarial/sfm_final.pt \
+        --checkpoint models/adversarial/high_noise.pt \
         --classifier-path models/pnsfwmedia_classifier.keras \
-        --image-dir path/to/images/ \
-        --output-dir output/
-
-    # With CUDA debug
-    CUDA_VISIBLE_DEVICES=0 CUDA_LAUNCH_BLOCKING=1 \
-    python src/adversarial/apply.py \
-        --checkpoint models/adversarial/sfm_final.pt \
-        --classifier-path models/pnsfwmedia_classifier.keras \
-        --image path/to/image.jpg
+        --projection-path models/clip_projection.pt \
+        --image-dir image/ \
+        --output-dir output/adversarial
 """
 
 import argparse
-import json
 import os
 import sys
 from pathlib import Path
@@ -62,16 +54,8 @@ SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 
 def setup_device(force_cpu: bool = False) -> torch.device:
     if force_cpu or not torch.cuda.is_available():
-        print("[Device] Using CPU")
         return torch.device("cpu")
-
-    device = torch.device("cuda")
-    print(f"[Device] Using CUDA: {torch.cuda.get_device_name(0)}")
-    cvd = os.environ.get("CUDA_VISIBLE_DEVICES", "(not set)")
-    clb = os.environ.get("CUDA_LAUNCH_BLOCKING", "(not set)")
-    if cvd != "(not set)" or clb != "(not set)":
-        print(f"[Device] CUDA_VISIBLE_DEVICES={cvd}  CUDA_LAUNCH_BLOCKING={clb}")
-    return device
+    return torch.device("cuda")
 
 
 # ---------------------------------------------------------------------------
@@ -157,36 +141,6 @@ def save_perturbed_image(
 
     result_img.save(output_path, **save_kwargs)
     return result_img
-
-
-# ---------------------------------------------------------------------------
-# Classification display
-# ---------------------------------------------------------------------------
-
-def format_classification(prob: float, threshold: float = 0.5) -> str:
-    label = "NSFW" if prob >= threshold else "SFW"
-    return f"{prob:.4f} ({label})"
-
-
-def print_comparison(
-    image_name: str,
-    prob_before: float,
-    prob_after: float,
-    threshold: float = 0.5,
-):
-    """Print a formatted before/after comparison."""
-    label_before = "NSFW" if prob_before >= threshold else "SFW"
-    label_after = "NSFW" if prob_after >= threshold else "SFW"
-    delta = prob_after - prob_before
-    success = "SUCCESS" if (prob_before >= threshold and prob_after < threshold) else "---"
-
-    print(f"  {image_name}")
-    print(f"    Before : {prob_before:.4f}  [{label_before}]")
-    print(f"    After  : {prob_after:.4f}  [{label_after}]")
-    print(f"    Delta  : {delta:+.4f}")
-    if success == "SUCCESS":
-        print(f"    Result : ** NSFW -> SFW  (misclassification achieved) **")
-    print()
 
 
 # ---------------------------------------------------------------------------
@@ -293,50 +247,37 @@ def main():
     # ------------------------------------------------------------------
     # Load checkpoint and reconstruct models
     # ------------------------------------------------------------------
-    print(f"\nLoading checkpoint: {args.checkpoint}")
-    ckpt = torch.load(args.checkpoint, map_location=device, weights_only=False)
+    try:
+        ckpt = torch.load(args.checkpoint, map_location=device, weights_only=False)
+        train_config = ckpt.get("config", {})
+        epsilon = train_config.get("epsilon", 0.03)
+        clip_model_name = train_config.get("clip_model", args.clip_model)
+        image_size = train_config.get("image_size", 224)
 
-    train_config = ckpt.get("config", {})
-    epsilon = train_config.get("epsilon", 0.03)
-    clip_model_name = train_config.get("clip_model", args.clip_model)
-    image_size = train_config.get("image_size", 224)
+        generator = PerturbationGenerator(epsilon=epsilon, cond_dim=256).to(device)
+        generator.load_state_dict(ckpt["generator"])
+        generator.eval()
 
-    print(f"  epsilon    = {epsilon}")
-    print(f"  clip_model = {clip_model_name}")
-    print(f"  image_size = {image_size}")
-    if "best_asr" in ckpt:
-        print(f"  best_asr   = {ckpt['best_asr']:.1%}")
-    if "epoch" in ckpt:
-        print(f"  epoch      = {ckpt['epoch']}")
+        conditioner = FeatureDifferenceConditioner(embed_dim=256).to(device)
+        conditioner.load_state_dict(ckpt["conditioner"])
+        conditioner.eval()
 
-    # --- Generator ---
-    generator = PerturbationGenerator(epsilon=epsilon, cond_dim=256).to(device)
-    generator.load_state_dict(ckpt["generator"])
-    generator.eval()
-    print("[Model] PerturbationGenerator loaded")
+        clip_pipeline = DifferentiableCLIPPipeline(
+            clip_model_name=clip_model_name,
+            projection_path=args.projection_path,
+            device=str(device),
+        ).to(device)
+        clip_pipeline.eval()
 
-    # --- Conditioner ---
-    conditioner = FeatureDifferenceConditioner(embed_dim=256).to(device)
-    conditioner.load_state_dict(ckpt["conditioner"])
-    conditioner.eval()
-    print("[Model] FeatureDifferenceConditioner loaded")
+        classifier = KerasClassifierBridge.from_keras(
+            args.classifier_path, device=str(device)
+        )
+        classifier.eval()
 
-    # --- CLIP pipeline ---
-    projection_path = args.projection_path
-    clip_pipeline = DifferentiableCLIPPipeline(
-        clip_model_name=clip_model_name,
-        projection_path=projection_path,
-        device=str(device),
-    ).to(device)
-    clip_pipeline.eval()
-    print("[Model] DifferentiableCLIPPipeline loaded")
-
-    # --- Classifier ---
-    classifier = KerasClassifierBridge.from_keras(
-        args.classifier_path, device=str(device)
-    )
-    classifier.eval()
-    print("[Model] KerasClassifierBridge loaded")
+        print("[OK] Model loaded")
+    except Exception as e:
+        print(f"[ERROR] Model load failed: {e}")
+        return
 
     # ------------------------------------------------------------------
     # Collect input images
@@ -351,23 +292,18 @@ def main():
         )
 
     if not image_paths:
-        print("No images found.")
+        print("[ERROR] No images found")
         return
 
-    print(f"\nProcessing {len(image_paths)} image(s)")
+    print(f"[OK] Found {len(image_paths)} image(s)")
     os.makedirs(args.output_dir, exist_ok=True)
 
     # ------------------------------------------------------------------
     # Process each image
     # ------------------------------------------------------------------
     results = []
-    n_success = 0
 
-    print(f"\n{'='*64}")
-    print(f"{'Image':<30}  {'Before':>10}  {'After':>10}  {'Result':>10}")
-    print(f"{'-'*64}")
-
-    for img_path in tqdm(image_paths, desc="Applying perturbation"):
+    for img_path in tqdm(image_paths, desc="Processing", disable=len(image_paths) == 1):
         try:
             result = apply_perturbation(
                 image_path=str(img_path),
@@ -379,7 +315,7 @@ def main():
                 image_size=image_size,
             )
         except Exception as e:
-            print(f"  [ERROR] {img_path.name}: {e}")
+            print(f"[ERROR] {img_path.name}: {e}")
             continue
 
         # Build output path preserving extension
@@ -397,72 +333,20 @@ def main():
 
         prob_b = result["prob_before"]
         prob_a = result["prob_after"]
-        label_b = "NSFW" if prob_b >= args.threshold else "SFW"
-        label_a = "NSFW" if prob_a >= args.threshold else "SFW"
-        flipped = prob_b >= args.threshold and prob_a < args.threshold
-
-        if flipped:
-            n_success += 1
-            tag = "FLIPPED"
-        else:
-            tag = ""
-
-        name_display = img_path.name[:28]
-        print(
-            f"  {name_display:<30}"
-            f"  {prob_b:>6.4f} {label_b:<4}"
-            f"  {prob_a:>6.4f} {label_a:<4}"
-            f"  {tag}"
-        )
-
-        results.append({
-            "input": str(img_path),
-            "output": out_path,
-            "original_size": list(result["original_size"]),
-            "prob_before": round(prob_b, 6),
-            "prob_after": round(prob_a, 6),
-            "label_before": label_b,
-            "label_after": label_a,
-            "flipped": flipped,
-        })
+        results.append({"before": prob_b, "after": prob_a, "output": out_path})
 
     # ------------------------------------------------------------------
     # Summary
     # ------------------------------------------------------------------
-    total = len(results)
-    print(f"\n{'='*64}")
-    print("Summary")
-    print(f"{'='*64}")
-    print(f"  Total images processed : {total}")
-    print(f"  NSFW -> SFW flipped    : {n_success} / {total}"
-          f"  ({100*n_success/total:.1f}%)" if total > 0 else "")
-    if results:
-        avg_before = np.mean([r["prob_before"] for r in results])
-        avg_after = np.mean([r["prob_after"] for r in results])
-        print(f"  Avg NSFW prob (before)  : {avg_before:.4f}")
-        print(f"  Avg NSFW prob (after)   : {avg_after:.4f}")
-        print(f"  Avg prob reduction      : {avg_before - avg_after:+.4f}")
-    print(f"  Output directory        : {args.output_dir}/")
+    if not results:
+        return
 
-    # Save JSON report
-    report_path = str(Path(args.output_dir) / "results.json")
-    report = {
-        "checkpoint": args.checkpoint,
-        "classifier": args.classifier_path,
-        "threshold": args.threshold,
-        "epsilon": epsilon,
-        "summary": {
-            "total": total,
-            "flipped": n_success,
-            "flip_rate": round(n_success / total, 4) if total > 0 else 0.0,
-            "avg_prob_before": round(avg_before, 6) if results else 0.0,
-            "avg_prob_after": round(avg_after, 6) if results else 0.0,
-        },
-        "images": results,
-    }
-    with open(report_path, "w") as f:
-        json.dump(report, f, indent=2, ensure_ascii=False)
-    print(f"  Report saved to         : {report_path}")
+    avg_before = np.mean([r["before"] for r in results])
+    avg_after = np.mean([r["after"] for r in results])
+    delta = avg_after - avg_before
+
+    print(f"\n[Result] {avg_before:.4f} -> {avg_after:.4f} ({delta:+.4f})")
+    print(f"[Saved]  {args.output_dir}/")
 
 
 if __name__ == "__main__":
