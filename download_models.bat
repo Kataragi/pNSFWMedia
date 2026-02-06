@@ -62,16 +62,24 @@ echo.
 
 :: List downloaded files
 echo  Downloaded files:
-dir /b models\adversarial\*.pt 2>nul
-if errorlevel 1 (
-    echo    (no .pt files found)
-)
+echo.
+if exist models\adversarial\high_noise.pt echo    high_noise.pt       (high noise / high attack success rate)
+if exist models\adversarial\medium_noise.pt echo    medium_noise.pt     (medium noise)
+if exist models\adversarial\low_noise.pt echo    low_noise.pt        (low noise)
+if exist models\adversarial\very_lownoise.pt echo    very_lownoise.pt    (very low noise / visually invisible)
+if exist models\adversarial\pnsfwmedia_classifier.keras echo    pnsfwmedia_classifier.keras
+if exist models\adversarial\clip_projection.pt echo    clip_projection.pt
 
 echo.
 echo  Quick start:
-echo    python src/adversarial/apply.py ^
-echo        --checkpoint models/adversarial/sfm_final.pt ^
-echo        --image path/to/image.jpg
+echo    1. Place your image in image/ folder
+echo    2. Run:
+echo       python src/adversarial/apply.py ^
+echo           --checkpoint models/adversarial/high_noise.pt ^
+echo           --classifier-path models/pnsfwmedia_classifier.keras ^
+echo           --projection-path models/clip_projection.pt ^
+echo           --image image/image.png ^
+echo           --output-dir output/adversarial
 echo.
 echo ============================================================
 

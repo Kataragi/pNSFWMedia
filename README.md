@@ -85,8 +85,10 @@ huggingface-cli download kataragi/adversarial --local-dir models/adversarial --l
 
 | ファイル | 説明 |
 |---------|------|
-| `sfm_final.pt` | 敵対的摂動生成モデル（最終エポック） |
-| `sfm_best.pt` | 敵対的摂動生成モデル（最高 ASR） |
+| `high_noise.pt` | 敵対的摂動生成モデル（高ノイズ・高攻撃成功率） |
+| `medium_noise.pt` | 敵対的摂動生成モデル（中ノイズ） |
+| `low_noise.pt` | 敵対的摂動生成モデル（低ノイズ） |
+| `very_lownoise.pt` | 敵対的摂動生成モデル（極低ノイズ・視覚的に不可視） |
 | `pnsfwmedia_classifier.keras` | NSFW 分類器 |
 | `clip_projection.pt` | CLIP 射影層の重み |
 
@@ -101,18 +103,27 @@ huggingface-cli download kataragi/adversarial --local-dir models/adversarial --l
 
 以下のファイルが必要です（`download_models.bat` で自動ダウンロード可能）：
 
-- `models/adversarial/sfm_final.pt` — 学習済み摂動生成モデル
+- `models/adversarial/high_noise.pt` — 学習済み摂動生成モデル（または他のノイズレベル）
 - `models/adversarial/pnsfwmedia_classifier.keras` — NSFW 分類器
 - `models/adversarial/clip_projection.pt` — CLIP 射影層の重み
+
+### 入力画像の配置
+
+摂動を加えたい画像を `image/` フォルダに配置してください：
+
+```
+image/
+└── image.png
+```
 
 ### 単一画像に適用
 
 ```bash
 python src/adversarial/apply.py \
-    --checkpoint models/adversarial/sfm_final.pt \
-    --classifier-path models/adversarial/pnsfwmedia_classifier.keras \
-    --projection-path models/adversarial/clip_projection.pt \
-    --image path/to/image.jpg \
+    --checkpoint models/adversarial/high_noise.pt \
+    --classifier-path models/pnsfwmedia_classifier.keras \
+    --projection-path models/clip_projection.pt \
+    --image image/image.png \
     --output-dir output/adversarial
 ```
 
@@ -120,34 +131,23 @@ python src/adversarial/apply.py \
 
 ```bash
 python src/adversarial/apply.py \
-    --checkpoint models/adversarial/sfm_final.pt \
-    --classifier-path models/adversarial/pnsfwmedia_classifier.keras \
-    --projection-path models/adversarial/clip_projection.pt \
-    --image-dir path/to/images/ \
+    --checkpoint models/adversarial/high_noise.pt \
+    --classifier-path models/pnsfwmedia_classifier.keras \
+    --projection-path models/clip_projection.pt \
+    --image-dir image/ \
     --output-dir output/adversarial
 ```
 
 ### 出力例
 
-コンソールには加工前後の NSFW 確率と判定結果が表示されます：
+コンソールには簡潔なステータスと結果が表示されます：
 
 ```
-============================================================
-Image                           Before      After      Result
-------------------------------------------------------------
-  photo001.jpg                  0.9312 NSFW  0.1247 SFW   FLIPPED
-  photo002.jpg                  0.8876 NSFW  0.0983 SFW   FLIPPED
-  photo003.jpg                  0.7654 NSFW  0.4312 SFW   FLIPPED
+[OK] Model loaded
+[OK] Found 1 image(s)
 
-============================================================
-Summary
-============================================================
-  Total images processed : 3
-  NSFW -> SFW flipped    : 3 / 3  (100.0%)
-  Avg NSFW prob (before)  : 0.8614
-  Avg NSFW prob (after)   : 0.2181
-  Output directory        : output/adversarial/
-  Report saved to         : output/adversarial/results.json
+[Result] 0.9312 -> 0.1247 (-0.8065)
+[Saved]  output/adversarial/
 ```
 
 ### 推論パラメータ
@@ -165,38 +165,6 @@ Summary
 | `--threshold` | 0.5 | NSFW 分類閾値 |
 | `--cpu` | — | CPU モードを強制 |
 
-### JSON レポート
-
-処理結果は `output/adversarial/results.json` に自動保存されます：
-
-```json
-{
-  "checkpoint": "models/adversarial/sfm_final.pt",
-  "classifier": "models/pnsfwmedia_classifier.keras",
-  "threshold": 0.5,
-  "epsilon": 0.03,
-  "summary": {
-    "total": 3,
-    "flipped": 3,
-    "flip_rate": 1.0,
-    "avg_prob_before": 0.8614,
-    "avg_prob_after": 0.2181
-  },
-  "images": [
-    {
-      "input": "path/to/photo001.jpg",
-      "output": "output/adversarial/photo001_perturbed.jpg",
-      "original_size": [1920, 1080],
-      "prob_before": 0.9312,
-      "prob_after": 0.1247,
-      "label_before": "NSFW",
-      "label_after": "SFW",
-      "flipped": true
-    }
-  ]
-}
-```
-
 ---
 
 ## ディレクトリ構造
@@ -206,8 +174,9 @@ pNSFWMedia/
 ├── setup.bat             # Windows セットアップスクリプト
 ├── download_models.bat   # 学習済みモデルのダウンロード
 ├── requirements.txt      # 依存パッケージ
+├── image/                # 摂動を加える入力画像を配置
 ├── dataset/
-│   ├── images/           # 元画像
+│   ├── images/           # 学習用元画像
 │   │   ├── sfw/
 │   │   └── nsfw/
 │   └── embeddings/       # 埋め込み（Stage B 用）
@@ -215,6 +184,8 @@ pNSFWMedia/
 │       └── nsfw/
 ├── models/               # 学習済みモデル
 │   └── adversarial/      # SFM 敵対的摂動モデル
+├── output/               # 出力ディレクトリ
+│   └── adversarial/      # 摂動適用済み画像
 ├── logs/                 # TensorBoard ログ
 ├── results/              # 評価結果
 └── src/
