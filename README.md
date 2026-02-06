@@ -10,9 +10,11 @@ Twitter/X の pNSFWMedia を参考にした NSFW 画像分類モデルの再現�
 - **Stage B**: MLP による二値分類（NSFW確率を出力）
 - **Adversarial**: Semantic Feature Migration (SFM) による敵対的摂動生成
 
-## インストール
+---
 
-### Windows（推奨）
+## Windows
+
+### インストール
 
 `setup.bat` を実行すると、仮想環境の作成・依存パッケージのインストール・ディレクトリ構造の作成が自動で行われます。
 
@@ -28,7 +30,162 @@ setup.bat
 venv\Scripts\activate
 ```
 
-### Linux / macOS
+### CUDA/GPU サポート（オプション）
+
+GPU を使用して学習・推論を高速化するには、CUDA 対応パッケージを追加インストールしてください。
+
+```cmd
+:: CUDA 対応 PyTorch
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
+
+:: CUDA 対応 TensorFlow
+pip install tensorflow[and-cuda]
+
+:: CUDA 対応 onnxruntime（NudeNet 用）
+pip install onnxruntime-gpu
+```
+
+CUDA 環境の確認：
+
+```cmd
+python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
+python -c "import tensorflow as tf; print(tf.config.list_physical_devices('GPU'))"
+python -c "import onnxruntime as ort; print(ort.get_available_providers())"
+```
+
+### 学習済みモデルのダウンロード
+
+仮想環境を有効化した状態で `download_models.bat` を実行すると、HuggingFace から学習済みモデルをダウンロードします。
+
+```cmd
+venv\Scripts\activate
+download_models.bat
+```
+
+ダウンロードされるモデル（[HuggingFace リポジトリ](https://huggingface.co/kataragi/adversarial)）：
+
+| ファイル | 説明 |
+|---------|------|
+| `high_noise.pt` | 敵対的摂動生成モデル（高ノイズ） |
+| `medium_noise.pt` | 敵対的摂動生成モデル（中ノイズ） |
+| `low_noise.pt` | 敵対的摂動生成モデル（低ノイズ） |
+| `very_lownoise.pt` | 敵対的摂動生成モデル（極低ノイズ・視覚的に不可視） |
+| `pnsfwmedia_classifier.keras` | NSFW 分類器 |
+| `clip_projection.pt` | CLIP 射影層の重み |
+
+### GUI で敵対的摂動を適用
+
+Gradio による Web ベースの GUI を起動します。
+
+```cmd
+python src/adversarial/gui.py
+```
+
+ブラウザで `http://localhost:7860` を開くと GUI が表示されます。
+
+#### GUI の機能
+
+- **Single Model タブ**: 1つのモデルを選択して摂動を適用
+- **All Models タブ**: 4つのモデル全てで摂動を生成し比較
+
+#### GUI オプション
+
+```cmd
+:: ポート番号を指定
+python src/adversarial/gui.py --port 7861
+
+:: 公開URL を生成（外部からアクセス可能）
+python src/adversarial/gui.py --share
+
+:: CPU モードを強制
+python src/adversarial/gui.py --cpu
+```
+
+### コマンドラインで敵対的摂動を適用
+
+#### 入力画像の配置
+
+摂動を加えたい画像を `image/` フォルダに配置してください：
+
+```
+image/
+└── image.png
+```
+
+#### 単一画像に適用
+
+ノイズレベルに応じて使用するモデルを選択してください：
+
+##### high_noise.pt
+
+```cmd
+python src/adversarial/apply.py ^
+    --checkpoint models/adversarial/high_noise.pt ^
+    --classifier-path models/pnsfwmedia_classifier.keras ^
+    --projection-path models/clip_projection.pt ^
+    --image image/image.png ^
+    --output-dir output/adversarial
+```
+
+##### medium_noise.pt
+
+```cmd
+python src/adversarial/apply.py ^
+    --checkpoint models/adversarial/medium_noise.pt ^
+    --classifier-path models/pnsfwmedia_classifier.keras ^
+    --projection-path models/clip_projection.pt ^
+    --image image/image.png ^
+    --output-dir output/adversarial
+```
+
+##### low_noise.pt
+
+```cmd
+python src/adversarial/apply.py ^
+    --checkpoint models/adversarial/low_noise.pt ^
+    --classifier-path models/pnsfwmedia_classifier.keras ^
+    --projection-path models/clip_projection.pt ^
+    --image image/image.png ^
+    --output-dir output/adversarial
+```
+
+##### very_lownoise.pt
+
+```cmd
+python src/adversarial/apply.py ^
+    --checkpoint models/adversarial/very_lownoise.pt ^
+    --classifier-path models/pnsfwmedia_classifier.keras ^
+    --projection-path models/clip_projection.pt ^
+    --image image/image.png ^
+    --output-dir output/adversarial
+```
+
+#### ディレクトリ内の画像を一括処理
+
+```cmd
+python src/adversarial/apply.py ^
+    --checkpoint models/adversarial/high_noise.pt ^
+    --classifier-path models/pnsfwmedia_classifier.keras ^
+    --projection-path models/clip_projection.pt ^
+    --image-dir image/ ^
+    --output-dir output/adversarial
+```
+
+#### 出力例
+
+```
+[OK] Model loaded
+[OK] Found 1 image(s)
+
+[Result] 0.9312 -> 0.1247 (-0.8065)
+[Saved]  output/adversarial/
+```
+
+---
+
+## Linux / macOS
+
+### インストール
 
 ```bash
 git clone https://github.com/Kataragi/pNSFWMedia.git
@@ -44,7 +201,7 @@ pip install git+https://github.com/openai/CLIP.git
 GPU を使用して学習・推論を高速化するには、CUDA 対応パッケージを追加インストールしてください。
 
 ```bash
-# CUDA 対応 PyTorch（Windows / Linux）
+# CUDA 対応 PyTorch
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
 
 # CUDA 対応 TensorFlow
@@ -54,7 +211,7 @@ pip install tensorflow[and-cuda]
 pip install onnxruntime-gpu
 ```
 
-#### CUDA 環境の確認
+CUDA 環境の確認：
 
 ```bash
 python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
@@ -63,17 +220,6 @@ python -c "import onnxruntime as ort; print(ort.get_available_providers())"
 ```
 
 ### 学習済みモデルのダウンロード
-
-仮想環境を有効化した状態で `download_models.bat` を実行すると、HuggingFace から学習済みモデルをダウンロードします。
-
-#### Windows
-
-```cmd
-venv\Scripts\activate
-download_models.bat
-```
-
-#### Linux / macOS
 
 ```bash
 source venv/bin/activate
@@ -85,29 +231,44 @@ huggingface-cli download kataragi/adversarial --local-dir models/adversarial --l
 
 | ファイル | 説明 |
 |---------|------|
-| `high_noise.pt` | 敵対的摂動生成モデル（高ノイズ・高攻撃成功率） |
+| `high_noise.pt` | 敵対的摂動生成モデル（高ノイズ） |
 | `medium_noise.pt` | 敵対的摂動生成モデル（中ノイズ） |
 | `low_noise.pt` | 敵対的摂動生成モデル（低ノイズ） |
 | `very_lownoise.pt` | 敵対的摂動生成モデル（極低ノイズ・視覚的に不可視） |
 | `pnsfwmedia_classifier.keras` | NSFW 分類器 |
 | `clip_projection.pt` | CLIP 射影層の重み |
 
----
+### GUI で敵対的摂動を適用
 
-## 敵対的摂動の適用（クイックスタート）
+Gradio による Web ベースの GUI を起動します。
 
-学習済みの敵対的摂動モデルを使い、NSFW 画像に知覚困難なノイズを加えて SFW に誤認させます。
-出力画像は入力画像の **オリジナル解像度** で保存されます。
+```bash
+python src/adversarial/gui.py
+```
 
-### 必要なファイル
+ブラウザで `http://localhost:7860` を開くと GUI が表示されます。
 
-以下のファイルが必要です（`download_models.bat` で自動ダウンロード可能）：
+#### GUI の機能
 
-- `models/adversarial/high_noise.pt` — 学習済み摂動生成モデル（または他のノイズレベル）
-- `models/adversarial/pnsfwmedia_classifier.keras` — NSFW 分類器
-- `models/adversarial/clip_projection.pt` — CLIP 射影層の重み
+- **Single Model タブ**: 1つのモデルを選択して摂動を適用
+- **All Models タブ**: 4つのモデル全てで摂動を生成し比較
 
-### 入力画像の配置
+#### GUI オプション
+
+```bash
+# ポート番号を指定
+python src/adversarial/gui.py --port 7861
+
+# 公開URL を生成（外部からアクセス可能）
+python src/adversarial/gui.py --share
+
+# CPU モードを強制
+python src/adversarial/gui.py --cpu
+```
+
+### コマンドラインで敵対的摂動を適用
+
+#### 入力画像の配置
 
 摂動を加えたい画像を `image/` フォルダに配置してください：
 
@@ -116,11 +277,11 @@ image/
 └── image.png
 ```
 
-### 単一画像に適用
+#### 単一画像に適用
 
 ノイズレベルに応じて使用するモデルを選択してください：
 
-#### high_noise.pt（高ノイズ・高攻撃成功率）
+##### high_noise.pt
 
 ```bash
 python src/adversarial/apply.py \
@@ -131,7 +292,7 @@ python src/adversarial/apply.py \
     --output-dir output/adversarial
 ```
 
-#### medium_noise.pt（中ノイズ）
+##### medium_noise.pt
 
 ```bash
 python src/adversarial/apply.py \
@@ -142,7 +303,7 @@ python src/adversarial/apply.py \
     --output-dir output/adversarial
 ```
 
-#### low_noise.pt（低ノイズ）
+##### low_noise.pt
 
 ```bash
 python src/adversarial/apply.py \
@@ -153,7 +314,7 @@ python src/adversarial/apply.py \
     --output-dir output/adversarial
 ```
 
-#### very_lownoise.pt（極低ノイズ・視覚的に不可視）
+##### very_lownoise.pt
 
 ```bash
 python src/adversarial/apply.py \
@@ -164,7 +325,7 @@ python src/adversarial/apply.py \
     --output-dir output/adversarial
 ```
 
-### ディレクトリ内の画像を一括処理
+#### ディレクトリ内の画像を一括処理
 
 ```bash
 python src/adversarial/apply.py \
@@ -175,9 +336,7 @@ python src/adversarial/apply.py \
     --output-dir output/adversarial
 ```
 
-### 出力例
-
-コンソールには簡潔なステータスと結果が表示されます：
+#### 出力例
 
 ```
 [OK] Model loaded
@@ -187,7 +346,9 @@ python src/adversarial/apply.py \
 [Saved]  output/adversarial/
 ```
 
-### 推論パラメータ
+---
+
+## 推論パラメータ
 
 | パラメータ | デフォルト値 | 説明 |
 |-----------|-------------|------|
@@ -236,7 +397,8 @@ pNSFWMedia/
         ├── dataset.py                 # NSFW/SFW ペア画像データセット
         ├── losses.py                  # SFM 複合損失関数
         ├── train.py                   # 学習スクリプト
-        └── apply.py                   # 摂動適用・推論スクリプト
+        ├── apply.py                   # 摂動適用・推論スクリプト
+        └── gui.py                     # Gradio GUI
 ```
 
 ---

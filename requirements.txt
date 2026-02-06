@@ -28,3 +28,6 @@ scikit-learn>=1.0.0
 matplotlib>=3.5.0
 tqdm>=4.64.0
 tensorboard>=2.10.0
+
+# GUI
+gradio>=4.0.0
