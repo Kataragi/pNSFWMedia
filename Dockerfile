@@ -10,16 +10,18 @@ RUN useradd -m -u 1000 user
 
 WORKDIR /home/user/app
 
-# Install Python build tools first
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+# Install Python build tools (pin setuptools<70 to keep pkg_resources)
+RUN pip install --no-cache-dir --upgrade pip "setuptools<70" wheel
 
 # Install PyTorch CPU-only (~200MB instead of ~2GB)
 RUN pip install --no-cache-dir \
     torch torchvision \
     --index-url https://download.pytorch.org/whl/cpu
 
-# Install CLIP from GitHub (--no-deps to avoid re-pulling torch)
-RUN pip install --no-cache-dir --no-deps \
+# Install CLIP from GitHub
+# --no-build-isolation: use the pinned setuptools (not latest)
+# --no-deps: avoid re-pulling torch
+RUN pip install --no-cache-dir --no-build-isolation --no-deps \
     git+https://github.com/openai/CLIP.git
 
 # Install remaining requirements
