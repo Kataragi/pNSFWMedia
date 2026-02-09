@@ -47,14 +47,13 @@ MODEL_OPTIONS = {
     "very_lownoise": ADVERSARIAL_DIR / "very_lownoise.pt",
 }
 
-# File-to-HuggingFace mapping for downloads
-HF_FILES = {
-    CLASSIFIER_PATH: "pnsfwmedia_classifier.keras",
-    PROJECTION_PATH: "clip_projection.pt",
-    ADVERSARIAL_DIR / "high_noise.pt": "high_noise.pt",
-    ADVERSARIAL_DIR / "medium_noise.pt": "medium_noise.pt",
-    ADVERSARIAL_DIR / "low_noise.pt": "low_noise.pt",
-    ADVERSARIAL_DIR / "very_lownoise.pt": "very_lownoise.pt",
+# Adversarial models to download from HuggingFace
+# (classifier and projection are already in the Git repo)
+HF_ADVERSARIAL_FILES = {
+    "high_noise.pt": ADVERSARIAL_DIR / "high_noise.pt",
+    "medium_noise.pt": ADVERSARIAL_DIR / "medium_noise.pt",
+    "low_noise.pt": ADVERSARIAL_DIR / "low_noise.pt",
+    "very_lownoise.pt": ADVERSARIAL_DIR / "very_lownoise.pt",
 }
 
 
@@ -63,24 +62,23 @@ HF_FILES = {
 # ---------------------------------------------------------------------------
 
 def download_models():
-    """Download all required models from HuggingFace Hub if not present."""
-    MODEL_DIR.mkdir(parents=True, exist_ok=True)
+    """Download adversarial models from HuggingFace Hub if not present."""
     ADVERSARIAL_DIR.mkdir(parents=True, exist_ok=True)
 
-    for local_path, hf_filename in HF_FILES.items():
+    for hf_filename, local_path in HF_ADVERSARIAL_FILES.items():
         if local_path.exists():
+            print(f"  [OK] {local_path}")
             continue
         print(f"Downloading {hf_filename} ...")
-        downloaded = hf_hub_download(
-            repo_id=HF_REPO_ID,
-            filename=hf_filename,
-            local_dir=str(local_path.parent),
-        )
-        # hf_hub_download may place the file in a cache; ensure it's at the expected path
-        if not local_path.exists() and Path(downloaded).exists():
-            local_path.parent.mkdir(parents=True, exist_ok=True)
-            os.replace(downloaded, str(local_path))
-        print(f"  -> {local_path}")
+        try:
+            hf_hub_download(
+                repo_id=HF_REPO_ID,
+                filename=hf_filename,
+                local_dir=str(ADVERSARIAL_DIR),
+            )
+            print(f"  -> {local_path}")
+        except Exception as e:
+            print(f"  [WARN] Failed to download {hf_filename}: {e}")
 
 
 # ---------------------------------------------------------------------------
