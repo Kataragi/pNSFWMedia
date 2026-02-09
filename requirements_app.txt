@@ -4,14 +4,14 @@
 # Gradio UI
 gradio>=4.0.0
 
-# PyTorch
-torch>=1.12.0
-torchvision>=0.13.0
+# PyTorch CPU-only (installed via Dockerfile with --index-url)
+# torch
+# torchvision
 
-# TensorFlow (Keras model loading)
-tensorflow>=2.16.0
+# TensorFlow CPU-only
+tensorflow-cpu>=2.16.0
 
-# CLIP
+# CLIP dependencies (CLIP itself installed via Dockerfile from git)
 ftfy
 regex
 

@@ -12,10 +12,16 @@ WORKDIR /home/user/app
 # Install Python build tools first
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
-# Install CLIP from GitHub
-RUN pip install --no-cache-dir git+https://github.com/openai/CLIP.git
+# Install PyTorch CPU-only (much smaller and faster than full torch)
+RUN pip install --no-cache-dir \
+    torch torchvision \
+    --index-url https://download.pytorch.org/whl/cpu
 
-# Install requirements
+# Install CLIP from GitHub (--no-deps to avoid pulling full torch again)
+RUN pip install --no-cache-dir --no-deps \
+    git+https://github.com/openai/CLIP.git
+
+# Install remaining requirements
 COPY requirements_app.txt .
 RUN pip install --no-cache-dir -r requirements_app.txt
 
