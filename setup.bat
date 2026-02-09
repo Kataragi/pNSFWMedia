@@ -59,8 +59,8 @@ if errorlevel 1 (
 :: Install CLIP (required for adversarial perturbation)
 echo.
 echo [INFO] Installing OpenAI CLIP...
-pip install setuptools
-pip install git+https://github.com/openai/CLIP.git
+pip install setuptools wheel
+pip install --no-build-isolation git+https://github.com/openai/CLIP.git
 
 if errorlevel 1 (
     echo [WARNING] Failed to install CLIP.
