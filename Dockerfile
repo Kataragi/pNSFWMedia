@@ -18,8 +18,8 @@ RUN pip install --no-cache-dir \
     torch torchvision \
     --index-url https://download.pytorch.org/whl/cpu
 
-# Install CLIP from GitHub
-RUN pip install --no-cache-dir --no-build-isolation --no-deps \
+# Install CLIP from GitHub (--no-deps to avoid re-pulling torch)
+RUN pip install --no-cache-dir --no-deps \
     git+https://github.com/openai/CLIP.git
 
 # Install remaining requirements
